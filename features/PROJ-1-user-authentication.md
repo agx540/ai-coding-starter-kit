@@ -459,3 +459,81 @@ Neu benötigt:
 9. **BUG-8 (Low):** `next` Parameter validieren
 10. **BUG-10 (Low):** Rate Limiting auf Registration-Endpoint
 11. **BUG-11 (Low):** Rate Limiting auf Forgot-Password (Server-Side Route)
+
+---
+
+## QA Retest Results (2026-02-10, Fresh Analysis)
+
+**Tested by:** QA Engineer Agent (Code-Level Review + Live Database Verification via Supabase MCP)
+
+### NEW Critical Finding
+
+#### BUG-12 (Critical): SECURITY DEFINER functions callable by `anon` role
+- **Severity:** Critical
+- **Category:** Security / Authorization Bypass
+- **Location:** `supabase/migrations/003_atomic_invitation_redemption.sql`, `supabase/migrations/004_login_rate_limiting.sql`
+- **Beschreibung:** All 5 SECURITY DEFINER functions are callable by the `anon` role directly from the client. PostgreSQL grants EXECUTE to PUBLIC by default, and the migrations never revoke this.
+- **Affected Functions:**
+  - `clear_login_attempts(text)` — attacker can clear rate limiting for any email before each brute-force guess
+  - `record_failed_login(text, text)` — attacker can lock out ANY user by recording 5 fake failed attempts
+  - `check_login_rate_limit(text)` — information leak about rate limit state
+  - `validate_invitation_token(text)` — can probe tokens without auth
+  - `redeem_invitation(text, uuid)` — can sabotage valid invitation tokens
+- **Impact:** Completely nullifies rate limiting (BUG-4 fix bypassed). Enables denial-of-service against any user account.
+- **Priority:** P0 Blocker — must be fixed before deployment
+- **Fix:** `REVOKE EXECUTE ON FUNCTION <name> FROM PUBLIC, anon; GRANT EXECUTE ON FUNCTION <name> TO service_role;`
+  - Rate limiting functions should only be callable from server-side API routes (which use service_role)
+  - `validate_invitation_token` needs to remain callable by `authenticated` role (used in registration flow from server route)
+
+#### BUG-13 (Medium): SECURITY DEFINER functions lack `SET search_path`
+- **Severity:** Medium
+- **Category:** Security (Supabase Advisor Warning)
+- **Location:** All 5 SECURITY DEFINER functions
+- **Beschreibung:** Functions do not have `search_path` set, making them vulnerable to search path manipulation attacks
+- **Fix:** Add `SET search_path = ''` to all function definitions
+- **Reference:** https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable
+
+#### BUG-14 (Medium): Leaked password protection disabled
+- **Severity:** Medium
+- **Category:** Security Configuration
+- **Location:** Supabase Auth settings
+- **Beschreibung:** HaveIBeenPwned leaked password protection is disabled. Users can register with known-compromised passwords.
+- **Fix:** Enable in Supabase Dashboard → Auth → Settings → Password Security
+- **Reference:** https://supabase.com/docs/guides/auth/password-security
+
+#### BUG-15 (Medium): Email not normalized before rate limiting
+- **Severity:** Medium
+- **Category:** Security / Rate Limiting Bypass
+- **Location:** `src/app/api/login/route.ts`
+- **Beschreibung:** The `/api/login` route passes the email as-is to rate-limit functions, but the DB functions use `LOWER(TRIM(...))`. An attacker can use `User@Test.com` vs `user@test.com` to get separate rate-limit windows at the application level.
+- **Fix:** Normalize email to lowercase + trim in `/api/login` before passing to Supabase
+
+#### BUG-16 (Low): No INSERT policy on profiles table
+- **Severity:** Low
+- **Category:** Security / Documentation
+- **Beschreibung:** The `profiles` table has no INSERT RLS policy. Profile creation likely relies on a database trigger from `auth.users`. This should be documented.
+
+### Updated Bugs Summary
+
+| Bug | Severity | Status |
+|-----|----------|--------|
+| BUG-12: SECURITY DEFINER functions callable by anon | **Critical** | **Neu — P0 Blocker** |
+| BUG-1: Race Condition Token-Einlösung | Critical | Gefixt ✅ |
+| BUG-4: Rate Limiting fehlt | Critical | Gefixt ✅ (but bypassed by BUG-12) |
+| BUG-6: Invitation-Tokens öffentlich lesbar | Critical | Gefixt ✅ |
+| BUG-13: SECURITY DEFINER functions lack search_path | Medium | Neu — Offen |
+| BUG-14: Leaked password protection disabled | Medium | Neu — Offen |
+| BUG-15: Email not normalized before rate limiting | Medium | Neu — Offen |
+| BUG-9: Rate Limit nur per Email, nicht IP | Medium | Offen |
+| BUG-5: Session-Timeout nicht konfiguriert | Medium | Offen |
+| BUG-2: Nur client-seitige Email-Validierung | Medium | Gefixt ✅ |
+| BUG-7: redeemed_at nicht gesetzt | Medium | Gefixt ✅ |
+| BUG-16: No INSERT policy on profiles | Low | Neu — Offen |
+| BUG-3: Inkonsistenter Email-Enumeration-Schutz | Low | Offen |
+| BUG-8: Auth-Callback next nicht validiert | Low | Offen |
+| BUG-10: Kein Rate Limit auf Registration | Low | Offen |
+| BUG-11: Kein Rate Limit auf Forgot Password | Low | Offen |
+
+### Updated Production-Ready Decision
+
+**NOT READY** — BUG-12 is a P0 blocker. The rate limiting fix (BUG-4) is completely bypassed because `clear_login_attempts()` is callable by anyone via the anon key. Fix BUG-12 first, then BUG-13 and BUG-15.
