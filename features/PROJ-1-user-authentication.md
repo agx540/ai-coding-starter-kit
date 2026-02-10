@@ -178,3 +178,246 @@ Neu benötigt:
 5. Email-Templates anpassen (Passwort-Reset, Willkommen)
 6. URL-Konfiguration (Redirect URLs für Passwort-Reset)
 ```
+
+---
+
+## QA Test Results
+
+**Tested:** 2026-02-10
+**Tested by:** QA Engineer (Code Review / Static Analysis)
+**App URL:** http://localhost:3000
+**Methode:** Statische Code-Analyse aller Auth-relevanten Dateien
+
+---
+
+## Acceptance Criteria Status
+
+### AC-1: Registrierung nur mit gültigem Einladungstoken möglich
+- [x] Token-Feld vorhanden (manuell oder aus URL `?token=`)
+- [x] Leerer Token wird abgelehnt: "Bitte gib deinen Einladungscode ein."
+- [x] Ungültiger Token wird abgelehnt: "Ungültiger Einladungscode."
+- [x] Bereits eingelöster Token wird abgelehnt: "Dieser Einladungscode wurde bereits verwendet."
+- [x] Abgelaufener Token wird abgelehnt mit Hinweis auf neuen Token
+- [ ] **BUG-1 (Critical):** Token-Validierung + Signup sind NICHT atomar (Race Condition)
+
+**Code:** `src/app/(auth)/register/page.tsx:54-103`
+
+### AC-2: Email-Validierung (Format + Einmaligkeit)
+- [x] Email-Format-Validierung via HTML `type="email"` (Browser-Validierung)
+- [x] Doppelte Email wird abgefangen: "Diese Email-Adresse ist bereits registriert."
+- [ ] **BUG-2 (Medium):** Email-Format wird NUR client-seitig validiert (kein Server-Check)
+
+**Code:** `src/app/(auth)/register/page.tsx:82-95, 143`
+
+### AC-3: Passwort-Mindestanforderungen (min. 8 Zeichen)
+- [x] Client-seitige Validierung: `password.length < 8`
+- [x] HTML `minLength={8}` auf Input-Feld
+- [x] Fehlermeldung: "Das Passwort muss mindestens 8 Zeichen lang sein."
+- [x] Passwort-Bestätigung muss übereinstimmen
+
+**Code:** `src/app/(auth)/register/page.tsx:40-48`
+
+### AC-4: Login mit Email + Passwort
+- [x] Login-Formular mit Email + Passwort
+- [x] Verwendet `supabase.auth.signInWithPassword()`
+- [x] Generische Fehlermeldung: "Email oder Passwort ist falsch." (verhindert Enumeration)
+- [x] Redirect zu `/` nach erfolgreichem Login
+- [x] Loading-State während Login
+
+**Code:** `src/app/(auth)/login/page.tsx:29-46`
+
+### AC-5: Logout beendet Session serverseitig
+- [x] `supabase.auth.signOut()` wird aufgerufen (serverseitige Session-Beendigung)
+- [x] Redirect zu `/login` nach Logout
+- [x] Logout-Button im Header Dropdown sichtbar
+
+**Code:** `src/components/auth-provider.tsx:60-65`, `src/components/header.tsx:39`
+
+### AC-6: Passwort-Reset per Email-Link
+- [x] Forgot-Password Seite sendet Reset-Email via `supabase.auth.resetPasswordForEmail()`
+- [x] Redirect-URL korrekt: `{origin}/auth/callback?next=/reset-password`
+- [x] Auth-Callback tauscht Code gegen Session
+- [x] Reset-Password Seite erlaubt neues Passwort (min. 8 Zeichen + Bestätigung)
+- [x] Erfolgs-Nachricht + Auto-Redirect nach 2 Sekunden
+
+**Code:** `src/app/(auth)/forgot-password/page.tsx`, `src/app/auth/callback/route.ts`, `src/app/(auth)/reset-password/page.tsx`
+
+### AC-7: Session bleibt nach Browser-Reload erhalten
+- [x] Middleware refresht Session-Cookies bei jedem Request
+- [x] AuthProvider holt Session beim Mount via `getSession()`
+- [x] `onAuthStateChange` Listener für State-Updates
+
+**Code:** `src/middleware.ts`, `src/components/auth-provider.tsx:43-57`
+
+### AC-8: Geschützte Routen leiten nicht-eingeloggte Nutzer zum Login um
+- [x] Middleware prüft `supabase.auth.getUser()` serverseitig
+- [x] Nicht-authentifizierte User werden zu `/login` redirected
+- [x] Authentifizierte User werden von Auth-Seiten weg zu `/` redirected
+- [x] Ausnahme: `/reset-password` bleibt für eingeloggte User zugänglich
+- [x] Public Routes korrekt definiert: `/login`, `/register`, `/forgot-password`, `/reset-password`, `/auth/callback`
+
+**Code:** `src/middleware.ts:4, 45-61`
+
+### AC-9: Supabase Auth als Backend (eigenes Supabase-Projekt)
+- [x] Browser-Client via `@supabase/ssr` (`createBrowserClient`)
+- [x] Server-Client via `@supabase/ssr` (`createServerClient`)
+- [x] Environment-Variablen konfiguriert (`.env.local`)
+- [x] RLS auf `profiles` und `invitations` Tabellen aktiviert
+
+**Code:** `src/lib/supabase.ts`, `src/lib/supabase-server.ts`
+
+---
+
+## Edge Cases Status
+
+### EC-1: Registrierung mit bereits verwendeter Email
+- [x] Supabase `signUp` gibt Error zurück wenn Email existiert
+- [x] Error wird erkannt via `message.includes('already registered')`
+- [x] Fehlermeldung: "Diese Email-Adresse ist bereits registriert."
+- [ ] **BUG-3 (Low):** Register verrät ob Email existiert, Forgot-Password nicht (Inkonsistenz bei Email-Enumeration-Schutz)
+
+### EC-2: Registrierung ohne/mit ungültigem Einladungstoken
+- [x] Leerer Token: "Bitte gib deinen Einladungscode ein."
+- [x] Nicht existierender Token: "Ungültiger Einladungscode."
+
+### EC-3: Abgelaufener Einladungstoken
+- [x] `expires_at` wird gegen aktuelle Zeit geprüft
+- [x] Fehlermeldung: "Dieser Einladungscode ist abgelaufen. Bitte fordere einen neuen an."
+
+### EC-4: Passwort-Reset für nicht existierende Email
+- [x] Zeigt IMMER Erfolgs-Nachricht (Security Best Practice)
+- [x] "Falls ein Konto mit dieser Email-Adresse existiert, haben wir dir einen Link... gesendet."
+
+### EC-5: Mehrfacher fehlgeschlagener Login → Rate Limiting
+- [ ] **BUG-4 (Critical):** Rate Limiting ist NICHT implementiert!
+- Kein Counter für fehlgeschlagene Versuche
+- Kein Lockout-Mechanismus
+- Spec fordert: "5 Versuche pro Minute"
+- Brute-Force-Angriffe sind möglich
+
+### EC-6: Session-Timeout nach Inaktivität → 7 Tage
+- [ ] **BUG-5 (Medium):** Kein explizites Session-Timeout konfiguriert
+- Verlässt sich auf Supabase-Defaults (JWT: 1h, Refresh-Token: undefiniert)
+- Spec fordert: "Automatischer Logout nach 7 Tagen"
+- Muss im Supabase Dashboard verifiziert/konfiguriert werden
+
+---
+
+## Security Audit (Red-Team Perspektive)
+
+### BUG-1 (Critical): Race Condition bei Token-Einlösung
+- **Severity:** Critical
+- **Location:** `src/app/(auth)/register/page.tsx:54-103`
+- **Beschreibung:** Token-Validierung (Zeile 55-65) und User-Signup (Zeile 82) und Token-Markierung (Zeile 98-103) sind drei separate, nicht-atomare Operationen auf dem CLIENT.
+- **Steps to Reproduce:**
+  1. Zwei Browser/Tabs öffnen mit gleichem Einladungstoken
+  2. Gleichzeitig auf "Registrieren" klicken
+  3. Beide validieren den Token erfolgreich (noch nicht eingelöst)
+  4. Beide erstellen ein Konto
+  5. Nur der letzte Update auf `redeemed_by` gewinnt
+- **Impact:** Ein Einladungstoken kann für mehrere Registrierungen missbraucht werden
+- **Fix:** Token-Validierung + Signup + Redemption in eine serverseitige API-Route mit Datenbank-Transaktion verschieben
+- **Priority:** Critical (Security Issue)
+
+### BUG-4 (Critical): Rate Limiting fehlt komplett
+- **Severity:** Critical
+- **Location:** `src/app/(auth)/login/page.tsx`
+- **Beschreibung:** Kein Rate Limiting auf Login-Versuche implementiert
+- **Steps to Reproduce:**
+  1. Login-Seite öffnen
+  2. Falsches Passwort 100x hintereinander eingeben
+  3. Expected: Nach 5 Versuchen blockiert für 1 Minute
+  4. Actual: Kann unendlich oft versuchen
+- **Impact:** Brute-Force-Angriffe auf Passwörter möglich
+- **Fix:** Rate Limiting serverseitig implementieren (z.B. via API-Route mit Counter in Supabase oder Upstash Redis)
+- **Priority:** Critical (Security Issue)
+
+### BUG-6 (Critical): Invitation-Tokens für alle lesbar (RLS zu permissiv)
+- **Severity:** Critical
+- **Location:** `supabase/migrations/001_create_invitations.sql:76-77`
+- **Beschreibung:** Die RLS-Policy `"Anyone can validate invitation token"` erlaubt `USING (true)` - jeder (auch unauthentifizierte Nutzer mit Anon-Key) kann ALLE Invitations-Daten lesen
+- **Steps to Reproduce:**
+  1. Browser-Konsole öffnen
+  2. Supabase-Client mit Anon-Key erstellen (URL und Key sind öffentlich im Frontend-Bundle)
+  3. `supabase.from('invitations').select('*')` ausführen
+  4. Alle Token (inkl. gültige, nicht-eingelöste) werden angezeigt
+- **Impact:** Angreifer kann gültige Einladungstokens stehlen und sich unberechtigt registrieren
+- **Fix:** RLS-Policy ändern: Entweder nur Token-Hash exponieren oder Validierung auf Server-Route verschieben
+- **Priority:** Critical (Security Issue)
+
+### BUG-5 (Medium): Session-Timeout nicht konfiguriert
+- **Severity:** Medium
+- **Location:** Supabase Dashboard / keine Code-Konfiguration
+- **Beschreibung:** Kein explizites Session-Timeout von 7 Tagen im Code konfiguriert
+- **Fix:** Im Supabase Dashboard unter Auth > Settings die JWT-Expiry und Refresh-Token-Lifetime konfigurieren
+- **Priority:** Medium
+
+### BUG-2 (Medium): Nur client-seitige Email-Validierung
+- **Severity:** Medium
+- **Location:** `src/app/(auth)/register/page.tsx:143`
+- **Beschreibung:** Email-Format wird nur via HTML `type="email"` validiert. Ein Angreifer kann den Browser-Check umgehen und ungültige Emails an Supabase senden.
+- **Fix:** Zod-Schema mit Email-Validierung auf Server-Seite hinzufügen (oder Supabase's eigene Email-Validierung reicht aus)
+- **Priority:** Medium (Supabase validiert Email serverseitig, daher kein direktes Security-Risiko)
+
+### BUG-7 (Medium): `redeemed_at` Timestamp wird nicht gesetzt
+- **Severity:** Medium
+- **Location:** `src/app/(auth)/register/page.tsx:101`
+- **Beschreibung:** Beim Einlösen eines Tokens wird nur `redeemed_by` gesetzt, aber `redeemed_at` bleibt `NULL`, obwohl die Spalte existiert
+- **Fix:** `redeemed_at: new Date().toISOString()` zum Update hinzufügen
+- **Priority:** Medium (Audit Trail unvollständig)
+
+### BUG-3 (Low): Inkonsistenter Email-Enumeration-Schutz
+- **Severity:** Low
+- **Location:** `src/app/(auth)/register/page.tsx:89` vs. `src/app/(auth)/forgot-password/page.tsx:33`
+- **Beschreibung:** Register zeigt "Diese Email-Adresse ist bereits registriert" (verrät ob Email existiert), während Forgot-Password generische Meldung zeigt
+- **Fix:** Register sollte ebenfalls generische Fehlermeldung zeigen
+- **Priority:** Low (inkonsistent, aber in Registrierung schwer zu vermeiden wegen UX)
+
+### BUG-8 (Low): Auth-Callback `next` Parameter nicht validiert
+- **Severity:** Low
+- **Location:** `src/app/auth/callback/route.ts:8`
+- **Beschreibung:** Der `next` Query-Parameter wird nicht validiert. Durch `${origin}${next}` ist ein offener Redirect zwar nicht direkt möglich, aber der Parameter sollte trotzdem auf interne Pfade beschränkt werden (Defense-in-Depth).
+- **Fix:** Validierung: `next` muss mit `/` beginnen und darf kein `//` enthalten
+- **Priority:** Low
+
+---
+
+## Bugs Summary
+
+| Bug | Severity | Typ | Status |
+|-----|----------|-----|--------|
+| BUG-1: Race Condition Token-Einlösung | Critical | Security | Offen |
+| BUG-4: Rate Limiting fehlt | Critical | Security | Offen |
+| BUG-6: Invitation-Tokens öffentlich lesbar | Critical | Security | **Gefixt** (002_fix_invitation_token_rls.sql) |
+| BUG-2: Nur client-seitige Email-Validierung | Medium | Validation | Offen |
+| BUG-5: Session-Timeout nicht konfiguriert | Medium | Config | Offen |
+| BUG-7: `redeemed_at` nicht gesetzt | Medium | Data Integrity | **Gefixt** (register/page.tsx) |
+| BUG-3: Inkonsistenter Email-Enumeration-Schutz | Low | Security/UX | Offen |
+| BUG-8: Auth-Callback `next` nicht validiert | Low | Security | Offen |
+
+---
+
+## Summary
+
+- **Acceptance Criteria:** 7/9 bestanden, 2 mit Bugs
+- **Edge Cases:** 4/6 bestanden, 2 nicht implementiert
+- **Bugs gefunden:** 8 (3 Critical, 3 Medium, 2 Low) — davon 2 gefixt (BUG-6, BUG-7)
+- **Feature ist NICHT production-ready** (2 Critical Security Issues offen: BUG-1, BUG-4)
+
+---
+
+## Recommendation
+
+**Vor Deployment MÜSSEN gefixt werden:**
+1. ~~**BUG-6 (Critical):** Invitation-Tokens RLS-Policy einschränken~~ **GEFIXT**
+2. **BUG-1 (Critical):** Token-Registrierung in atomare Server-Side API-Route verschieben
+3. **BUG-4 (Critical):** Rate Limiting für Login implementieren (5 Versuche/Minute)
+
+**Sollten gefixt werden:**
+
+4. ~~**BUG-7:** `redeemed_at` Timestamp setzen~~ **GEFIXT**
+5. **BUG-5:** Session-Timeout im Supabase Dashboard auf 7 Tage konfigurieren
+
+**Nice-to-have:**
+6. **BUG-3:** Email-Enumeration-Schutz konsistent machen
+7. **BUG-8:** `next` Parameter validieren

@@ -51,29 +51,20 @@ function RegisterForm() {
 
     const supabase = createClient()
 
-    // Validate invitation token
-    const { data: invitation, error: tokenError } = await supabase
-      .from('invitations')
-      .select('id, expires_at, redeemed_by')
-      .eq('token', token.trim())
-      .single()
+    // Validate invitation token via secure RPC (no direct table access)
+    const { data: validation, error: tokenError } = await supabase
+      .rpc('validate_invitation_token', { p_token: token.trim() })
 
-    if (tokenError || !invitation) {
-      setError('Ungültiger Einladungscode.')
-      setIsLoading(false)
-      return
-    }
-
-    if (invitation.redeemed_by) {
-      setError('Dieser Einladungscode wurde bereits verwendet.')
-      setIsLoading(false)
-      return
-    }
-
-    if (new Date(invitation.expires_at) < new Date()) {
-      setError(
-        'Dieser Einladungscode ist abgelaufen. Bitte fordere einen neuen an.'
-      )
+    if (tokenError || !validation || !validation.valid) {
+      if (validation?.error === 'already_redeemed') {
+        setError('Dieser Einladungscode wurde bereits verwendet.')
+      } else if (validation?.error === 'expired') {
+        setError(
+          'Dieser Einladungscode ist abgelaufen. Bitte fordere einen neuen an.'
+        )
+      } else {
+        setError('Ungültiger Einladungscode.')
+      }
       setIsLoading(false)
       return
     }
@@ -98,8 +89,11 @@ function RegisterForm() {
     if (data.user) {
       await supabase
         .from('invitations')
-        .update({ redeemed_by: data.user.id })
-        .eq('id', invitation.id)
+        .update({
+          redeemed_by: data.user.id,
+          redeemed_at: new Date().toISOString(),
+        })
+        .eq('id', validation.invitation_id)
     }
 
     if (data.session) {
