@@ -198,9 +198,9 @@ Neu benötigt:
 - [x] Ungültiger Token wird abgelehnt: "Ungültiger Einladungscode."
 - [x] Bereits eingelöster Token wird abgelehnt: "Dieser Einladungscode wurde bereits verwendet."
 - [x] Abgelaufener Token wird abgelehnt mit Hinweis auf neuen Token
-- [ ] **BUG-1 (Critical):** Token-Validierung + Signup sind NICHT atomar (Race Condition)
+- [x] **BUG-1 (Critical):** ~~Token-Validierung + Signup waren NICHT atomar (Race Condition)~~ **GEFIXT** — Registrierung läuft jetzt über `/api/register` mit atomarer DB-Funktion `redeem_invitation` (FOR UPDATE Row Lock)
 
-**Code:** `src/app/(auth)/register/page.tsx:54-103`
+**Code:** `src/app/api/register/route.ts`, `supabase/migrations/003_atomic_invitation_redemption.sql`
 
 ### AC-2: Email-Validierung (Format + Einmaligkeit)
 - [x] Email-Format-Validierung via HTML `type="email"` (Browser-Validierung)
@@ -305,19 +305,15 @@ Neu benötigt:
 
 ## Security Audit (Red-Team Perspektive)
 
-### BUG-1 (Critical): Race Condition bei Token-Einlösung
+### BUG-1 (Critical): Race Condition bei Token-Einlösung — **GEFIXT**
 - **Severity:** Critical
-- **Location:** `src/app/(auth)/register/page.tsx:54-103`
-- **Beschreibung:** Token-Validierung (Zeile 55-65) und User-Signup (Zeile 82) und Token-Markierung (Zeile 98-103) sind drei separate, nicht-atomare Operationen auf dem CLIENT.
-- **Steps to Reproduce:**
-  1. Zwei Browser/Tabs öffnen mit gleichem Einladungstoken
-  2. Gleichzeitig auf "Registrieren" klicken
-  3. Beide validieren den Token erfolgreich (noch nicht eingelöst)
-  4. Beide erstellen ein Konto
-  5. Nur der letzte Update auf `redeemed_by` gewinnt
-- **Impact:** Ein Einladungstoken kann für mehrere Registrierungen missbraucht werden
-- **Fix:** Token-Validierung + Signup + Redemption in eine serverseitige API-Route mit Datenbank-Transaktion verschieben
-- **Priority:** Critical (Security Issue)
+- **Location:** ~~`src/app/(auth)/register/page.tsx:54-103`~~ → `src/app/api/register/route.ts`
+- **Beschreibung:** Token-Validierung, User-Signup und Token-Markierung waren drei separate, nicht-atomare Operationen auf dem CLIENT.
+- **Fix (2026-02-10):**
+  1. Neue DB-Funktion `redeem_invitation(p_token, p_user_id)` mit `FOR UPDATE` Row Lock (`supabase/migrations/003_atomic_invitation_redemption.sql`)
+  2. Neue Server-Side API Route `/api/register` mit Zod-Validierung (`src/app/api/register/route.ts`)
+  3. Frontend ruft nur noch `/api/register` auf — kein direkter Supabase-Zugriff mehr
+- **Verifikation:** Zweiter gleichzeitiger Request bekommt `already_redeemed` Error zurück
 
 ### BUG-4 (Critical): Rate Limiting fehlt komplett
 - **Severity:** Critical
@@ -386,7 +382,7 @@ Neu benötigt:
 
 | Bug | Severity | Typ | Status |
 |-----|----------|-----|--------|
-| BUG-1: Race Condition Token-Einlösung | Critical | Security | Offen |
+| BUG-1: Race Condition Token-Einlösung | Critical | Security | **Gefixt** (003_atomic_invitation_redemption.sql + /api/register) |
 | BUG-4: Rate Limiting fehlt | Critical | Security | Offen |
 | BUG-6: Invitation-Tokens öffentlich lesbar | Critical | Security | **Gefixt** (002_fix_invitation_token_rls.sql) |
 | BUG-2: Nur client-seitige Email-Validierung | Medium | Validation | Offen |
@@ -401,8 +397,8 @@ Neu benötigt:
 
 - **Acceptance Criteria:** 7/9 bestanden, 2 mit Bugs
 - **Edge Cases:** 4/6 bestanden, 2 nicht implementiert
-- **Bugs gefunden:** 8 (3 Critical, 3 Medium, 2 Low) — davon 2 gefixt (BUG-6, BUG-7)
-- **Feature ist NICHT production-ready** (2 Critical Security Issues offen: BUG-1, BUG-4)
+- **Bugs gefunden:** 8 (3 Critical, 3 Medium, 2 Low) — davon 3 gefixt (BUG-1, BUG-6, BUG-7)
+- **Feature ist NICHT production-ready** (1 Critical Security Issue offen: BUG-4)
 
 ---
 
@@ -410,7 +406,7 @@ Neu benötigt:
 
 **Vor Deployment MÜSSEN gefixt werden:**
 1. ~~**BUG-6 (Critical):** Invitation-Tokens RLS-Policy einschränken~~ **GEFIXT**
-2. **BUG-1 (Critical):** Token-Registrierung in atomare Server-Side API-Route verschieben
+2. ~~**BUG-1 (Critical):** Token-Registrierung in atomare Server-Side API-Route verschieben~~ **GEFIXT**
 3. **BUG-4 (Critical):** Rate Limiting für Login implementieren (5 Versuche/Minute)
 
 **Sollten gefixt werden:**

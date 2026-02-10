@@ -3,7 +3,6 @@
 import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,56 +48,28 @@ function RegisterForm() {
 
     setIsLoading(true)
 
-    const supabase = createClient()
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token.trim(), email, password }),
+      })
 
-    // Validate invitation token via secure RPC (no direct table access)
-    const { data: validation, error: tokenError } = await supabase
-      .rpc('validate_invitation_token', { p_token: token.trim() })
+      const data = await res.json()
 
-    if (tokenError || !validation || !validation.valid) {
-      if (validation?.error === 'already_redeemed') {
-        setError('Dieser Einladungscode wurde bereits verwendet.')
-      } else if (validation?.error === 'expired') {
-        setError(
-          'Dieser Einladungscode ist abgelaufen. Bitte fordere einen neuen an.'
-        )
-      } else {
-        setError('Ungültiger Einladungscode.')
+      if (!res.ok) {
+        setError(data.error || 'Registrierung fehlgeschlagen. Bitte versuche es erneut.')
+        setIsLoading(false)
+        return
       }
-      setIsLoading(false)
-      return
-    }
 
-    // Sign up
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-    })
-
-    if (signUpError) {
-      if (signUpError.message.includes('already registered')) {
-        setError('Diese Email-Adresse ist bereits registriert.')
+      if (data.session) {
+        window.location.href = '/'
       } else {
         setError('Registrierung fehlgeschlagen. Bitte versuche es erneut.')
+        setIsLoading(false)
       }
-      setIsLoading(false)
-      return
-    }
-
-    // Mark invitation as redeemed
-    if (data.user) {
-      await supabase
-        .from('invitations')
-        .update({
-          redeemed_by: data.user.id,
-          redeemed_at: new Date().toISOString(),
-        })
-        .eq('id', validation.invitation_id)
-    }
-
-    if (data.session) {
-      window.location.href = '/'
-    } else {
+    } catch {
       setError('Registrierung fehlgeschlagen. Bitte versuche es erneut.')
       setIsLoading(false)
     }
