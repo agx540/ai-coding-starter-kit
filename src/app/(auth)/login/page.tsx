@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,28 +19,36 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setRemainingAttempts(null)
     setIsLoading(true)
 
-    const supabase = createClient()
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
 
-    if (error) {
-      setError('Email oder Passwort ist falsch.')
-      setIsLoading(false)
-      return
-    }
+      const data = await res.json()
 
-    if (data.session) {
+      if (!res.ok) {
+        setError(data.error ?? 'Login fehlgeschlagen. Bitte versuche es erneut.')
+        if (data.remaining_attempts !== undefined) {
+          setRemainingAttempts(data.remaining_attempts)
+        }
+        setIsLoading(false)
+        return
+      }
+
+      // Session cookies were set by the server — reload to pick them up
       window.location.href = '/'
-    } else {
-      setError('Login fehlgeschlagen. Bitte versuche es erneut.')
+    } catch {
+      setError('Verbindungsfehler. Bitte versuche es erneut.')
       setIsLoading(false)
     }
   }
@@ -56,7 +63,12 @@ export default function LoginPage() {
         <CardContent className="space-y-4">
           {error && (
             <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
-              {error}
+              <p>{error}</p>
+              {remainingAttempts !== null && remainingAttempts > 0 && (
+                <p className="mt-1 text-xs text-red-500">
+                  Noch {remainingAttempts} {remainingAttempts === 1 ? 'Versuch' : 'Versuche'} übrig.
+                </p>
+              )}
             </div>
           )}
           <div className="space-y-2">
