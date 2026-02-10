@@ -190,6 +190,12 @@ Neu benötigt:
 
 ---
 
+**Revalidation:** 2026-02-10
+**Revalidated by:** QA Engineer (Fix Validation)
+**Methode:** Code Review aller Migrations (001-004), API Routes, Frontend-Komponenten
+
+---
+
 ## Acceptance Criteria Status
 
 ### AC-1: Registrierung nur mit gültigem Einladungstoken möglich
@@ -198,33 +204,37 @@ Neu benötigt:
 - [x] Ungültiger Token wird abgelehnt: "Ungültiger Einladungscode."
 - [x] Bereits eingelöster Token wird abgelehnt: "Dieser Einladungscode wurde bereits verwendet."
 - [x] Abgelaufener Token wird abgelehnt mit Hinweis auf neuen Token
-- [x] **BUG-1 (Critical):** ~~Token-Validierung + Signup waren NICHT atomar (Race Condition)~~ **GEFIXT** — Registrierung läuft jetzt über `/api/register` mit atomarer DB-Funktion `redeem_invitation` (FOR UPDATE Row Lock)
+- [x] ~~**BUG-1 (Critical):** Token-Validierung + Signup waren NICHT atomar (Race Condition)~~ **GEFIXT + VALIDIERT** — `redeem_invitation()` mit `FOR UPDATE` Row Lock, `/api/register` als atomare Server-Side Route
 
 **Code:** `src/app/api/register/route.ts`, `supabase/migrations/003_atomic_invitation_redemption.sql`
+**Validierung:** `FOR UPDATE` lockt die Row, zweiter gleichzeitiger Request bekommt `already_redeemed`. Residuales Risiko: Wenn Redemption nach signUp fehlschlägt, existiert User-Account ohne eingelöstes Token (Code-Kommentar Zeile 77-79 dokumentiert Trade-off).
 
 ### AC-2: Email-Validierung (Format + Einmaligkeit)
 - [x] Email-Format-Validierung via HTML `type="email"` (Browser-Validierung)
 - [x] Doppelte Email wird abgefangen: "Diese Email-Adresse ist bereits registriert."
-- [ ] **BUG-2 (Medium):** Email-Format wird NUR client-seitig validiert (kein Server-Check)
+- [x] ~~**BUG-2 (Medium):** Email-Format wird NUR client-seitig validiert~~ **GEFIXT + VALIDIERT** — `/api/register` nutzt Zod-Schema mit `z.string().email()` für Server-seitige Validierung
 
-**Code:** `src/app/(auth)/register/page.tsx:82-95, 143`
+**Code:** `src/app/api/register/route.ts:7` (Zod), `src/app/(auth)/register/page.tsx:82-95` (Client)
 
 ### AC-3: Passwort-Mindestanforderungen (min. 8 Zeichen)
 - [x] Client-seitige Validierung: `password.length < 8`
+- [x] Server-seitige Validierung: Zod `z.string().min(8)` in `/api/register`
 - [x] HTML `minLength={8}` auf Input-Feld
 - [x] Fehlermeldung: "Das Passwort muss mindestens 8 Zeichen lang sein."
 - [x] Passwort-Bestätigung muss übereinstimmen
 
-**Code:** `src/app/(auth)/register/page.tsx:40-48`
+**Code:** `src/app/api/register/route.ts:8`, `src/app/(auth)/register/page.tsx:40-48`
 
 ### AC-4: Login mit Email + Passwort
 - [x] Login-Formular mit Email + Passwort
-- [x] Verwendet `supabase.auth.signInWithPassword()`
+- [x] Login über Server-Side API Route `/api/login` (nicht direkt via Supabase Client)
+- [x] Zod-Validierung auf Server-Seite
 - [x] Generische Fehlermeldung: "Email oder Passwort ist falsch." (verhindert Enumeration)
 - [x] Redirect zu `/` nach erfolgreichem Login
 - [x] Loading-State während Login
+- [x] Verbleibende Versuche werden angezeigt bei Fehlschlag
 
-**Code:** `src/app/(auth)/login/page.tsx:29-46`
+**Code:** `src/app/api/login/route.ts`, `src/app/(auth)/login/page.tsx:29-46`
 
 ### AC-5: Logout beendet Session serverseitig
 - [x] `supabase.auth.signOut()` wird aufgerufen (serverseitige Session-Beendigung)
@@ -263,8 +273,9 @@ Neu benötigt:
 - [x] Server-Client via `@supabase/ssr` (`createServerClient`)
 - [x] Environment-Variablen konfiguriert (`.env.local`)
 - [x] RLS auf `profiles` und `invitations` Tabellen aktiviert
+- [x] RLS auf `login_attempts` Tabelle aktiviert (keine Policies = kein direkter Client-Zugriff)
 
-**Code:** `src/lib/supabase.ts`, `src/lib/supabase-server.ts`
+**Code:** `src/lib/supabase.ts`, `src/lib/supabase-server.ts`, `supabase/migrations/004_login_rate_limiting.sql:18`
 
 ---
 
@@ -289,11 +300,16 @@ Neu benötigt:
 - [x] "Falls ein Konto mit dieser Email-Adresse existiert, haben wir dir einen Link... gesendet."
 
 ### EC-5: Mehrfacher fehlgeschlagener Login → Rate Limiting
-- [ ] **BUG-4 (Critical):** Rate Limiting ist NICHT implementiert!
-- Kein Counter für fehlgeschlagene Versuche
-- Kein Lockout-Mechanismus
-- Spec fordert: "5 Versuche pro Minute"
-- Brute-Force-Angriffe sind möglich
+- [x] ~~**BUG-4 (Critical):** Rate Limiting war NICHT implementiert~~ **GEFIXT + VALIDIERT**
+- [x] `login_attempts` Tabelle trackt fehlgeschlagene Versuche (RLS enabled, keine Policies)
+- [x] `check_login_rate_limit(p_email)` prüft ob >= 5 Versuche in 60 Sekunden
+- [x] `record_failed_login(p_email, p_ip)` loggt Fehlversuch + Cleanup (> 1h)
+- [x] `clear_login_attempts(p_email)` löscht Versuche bei erfolgreichem Login
+- [x] API Route `/api/login` integriert alle 3 Funktionen korrekt
+- [x] Frontend zeigt verbleibende Versuche + Lockout-Meldung (429-Status)
+- [ ] **BUG-9 (Medium):** Rate Limiting ist nur per Email, nicht per IP (siehe Security Audit)
+
+**Code:** `supabase/migrations/004_login_rate_limiting.sql`, `src/app/api/login/route.ts`
 
 ### EC-6: Session-Timeout nach Inaktivität → 7 Tage
 - [ ] **BUG-5 (Medium):** Kein explizites Session-Timeout konfiguriert
@@ -305,71 +321,89 @@ Neu benötigt:
 
 ## Security Audit (Red-Team Perspektive)
 
-### BUG-1 (Critical): Race Condition bei Token-Einlösung — **GEFIXT**
+### BUG-1 (Critical): Race Condition bei Token-Einlösung — **GEFIXT + VALIDIERT**
 - **Severity:** Critical
-- **Location:** ~~`src/app/(auth)/register/page.tsx:54-103`~~ → `src/app/api/register/route.ts`
+- **Location:** `src/app/api/register/route.ts` + `supabase/migrations/003_atomic_invitation_redemption.sql`
 - **Beschreibung:** Token-Validierung, User-Signup und Token-Markierung waren drei separate, nicht-atomare Operationen auf dem CLIENT.
 - **Fix (2026-02-10):**
-  1. Neue DB-Funktion `redeem_invitation(p_token, p_user_id)` mit `FOR UPDATE` Row Lock (`supabase/migrations/003_atomic_invitation_redemption.sql`)
-  2. Neue Server-Side API Route `/api/register` mit Zod-Validierung (`src/app/api/register/route.ts`)
+  1. Neue DB-Funktion `redeem_invitation(p_token, p_user_id)` mit `FOR UPDATE` Row Lock
+  2. Neue Server-Side API Route `/api/register` mit Zod-Validierung
   3. Frontend ruft nur noch `/api/register` auf — kein direkter Supabase-Zugriff mehr
-- **Verifikation:** Zweiter gleichzeitiger Request bekommt `already_redeemed` Error zurück
+- **Validierung (2026-02-10):** Code-Review bestätigt korrekte Implementierung. `FOR UPDATE` lockt Row, zweiter Request bekommt `already_redeemed`. Residuales Risiko dokumentiert (orphaned User bei Race Condition zwischen validate und redeem).
 
-### BUG-4 (Critical): Rate Limiting fehlt komplett
+### BUG-4 (Critical): Rate Limiting fehlt komplett — **GEFIXT + VALIDIERT**
 - **Severity:** Critical
-- **Location:** `src/app/(auth)/login/page.tsx`
-- **Beschreibung:** Kein Rate Limiting auf Login-Versuche implementiert
-- **Steps to Reproduce:**
-  1. Login-Seite öffnen
-  2. Falsches Passwort 100x hintereinander eingeben
-  3. Expected: Nach 5 Versuchen blockiert für 1 Minute
-  4. Actual: Kann unendlich oft versuchen
-- **Impact:** Brute-Force-Angriffe auf Passwörter möglich
-- **Fix:** Rate Limiting serverseitig implementieren (z.B. via API-Route mit Counter in Supabase oder Upstash Redis)
-- **Priority:** Critical (Security Issue)
+- **Location:** `supabase/migrations/004_login_rate_limiting.sql` + `src/app/api/login/route.ts`
+- **Beschreibung:** Kein Rate Limiting auf Login-Versuche war implementiert
+- **Fix (2026-02-10):**
+  1. Neue Tabelle `login_attempts` mit RLS (keine Policies = kein Client-Zugriff)
+  2. 3 SECURITY DEFINER Funktionen: `check_login_rate_limit`, `record_failed_login`, `clear_login_attempts`
+  3. Neue Server-Side API Route `/api/login` integriert Rate-Limit-Check vor Auth-Versuch
+  4. Frontend zeigt verbleibende Versuche + Lockout-Meldung
+- **Validierung (2026-02-10):** Code-Review bestätigt korrekte Implementierung. Flow: Zod-Validierung → IP-Extraktion → Rate-Limit-Check → Auth-Versuch → Record/Clear. 5 Versuche pro 60 Sekunden, dann HTTP 429. Cleanup von Einträgen > 1h. Alle DB-Funktionen sind SECURITY DEFINER (bypassen RLS korrekt).
+- **Residuales Risiko:** Siehe BUG-9.
 
-### BUG-6 (Critical): Invitation-Tokens für alle lesbar (RLS zu permissiv)
+### BUG-6 (Critical): Invitation-Tokens für alle lesbar (RLS zu permissiv) — **GEFIXT + VALIDIERT**
 - **Severity:** Critical
-- **Location:** `supabase/migrations/001_create_invitations.sql:76-77`
-- **Beschreibung:** Die RLS-Policy `"Anyone can validate invitation token"` erlaubt `USING (true)` - jeder (auch unauthentifizierte Nutzer mit Anon-Key) kann ALLE Invitations-Daten lesen
-- **Steps to Reproduce:**
-  1. Browser-Konsole öffnen
-  2. Supabase-Client mit Anon-Key erstellen (URL und Key sind öffentlich im Frontend-Bundle)
-  3. `supabase.from('invitations').select('*')` ausführen
-  4. Alle Token (inkl. gültige, nicht-eingelöste) werden angezeigt
-- **Impact:** Angreifer kann gültige Einladungstokens stehlen und sich unberechtigt registrieren
-- **Fix:** RLS-Policy ändern: Entweder nur Token-Hash exponieren oder Validierung auf Server-Route verschieben
-- **Priority:** Critical (Security Issue)
+- **Location:** `supabase/migrations/002_fix_invitation_token_rls.sql`
+- **Beschreibung:** Die RLS-Policy `"Anyone can validate invitation token"` erlaubte `USING (true)` — jeder konnte ALLE Invitations-Daten lesen
+- **Fix (2026-02-10):**
+  1. Permissive SELECT-Policy entfernt (`DROP POLICY`)
+  2. Neue admin-only SELECT-Policy
+  3. `validate_invitation_token()` als SECURITY DEFINER Funktion (gibt nur `valid/error` zurück, nie Token-Daten)
+- **Validierung (2026-02-10):** Code-Review bestätigt. Reguläre User können nicht mehr auf `invitations` Tabelle zugreifen. Validation läuft über sichere RPC-Funktion. Token-Brute-Force impraktikabel (256 Bit Entropy, 32 Byte hex).
 
-### BUG-5 (Medium): Session-Timeout nicht konfiguriert
+### BUG-9 (Medium): Rate Limiting nur per Email, nicht per IP — **NEU**
+- **Severity:** Medium
+- **Location:** `supabase/migrations/004_login_rate_limiting.sql:22-34`
+- **Beschreibung:** `check_login_rate_limit` zählt nur per Email. Ein Angreifer kann 5 Passwörter pro Account pro Minute für JEDEN Account testen (distributed brute-force). Das `ip_address`-Feld wird gespeichert aber nie zur Rate-Limit-Prüfung herangezogen.
+- **Impact:** Distributed Brute-Force über viele Accounts möglich
+- **Fix-Vorschlag:** Zusätzliche IP-basierte Rate-Limit-Funktion hinzufügen (z.B. max. 20 Login-Versuche pro IP pro Minute, unabhängig vom Account)
+- **Priority:** Medium (kein sofortiges Deployment-Blocker, aber sollte zeitnah gefixt werden)
+
+### BUG-5 (Medium): Session-Timeout nicht konfiguriert — **OFFEN**
 - **Severity:** Medium
 - **Location:** Supabase Dashboard / keine Code-Konfiguration
 - **Beschreibung:** Kein explizites Session-Timeout von 7 Tagen im Code konfiguriert
 - **Fix:** Im Supabase Dashboard unter Auth > Settings die JWT-Expiry und Refresh-Token-Lifetime konfigurieren
 - **Priority:** Medium
 
-### BUG-2 (Medium): Nur client-seitige Email-Validierung
+### BUG-2 (Medium): Nur client-seitige Email-Validierung — **GEFIXT + VALIDIERT**
 - **Severity:** Medium
-- **Location:** `src/app/(auth)/register/page.tsx:143`
-- **Beschreibung:** Email-Format wird nur via HTML `type="email"` validiert. Ein Angreifer kann den Browser-Check umgehen und ungültige Emails an Supabase senden.
-- **Fix:** Zod-Schema mit Email-Validierung auf Server-Seite hinzufügen (oder Supabase's eigene Email-Validierung reicht aus)
-- **Priority:** Medium (Supabase validiert Email serverseitig, daher kein direktes Security-Risiko)
+- **Location:** `src/app/api/register/route.ts:7`
+- **Beschreibung:** Email-Format wurde nur via HTML `type="email"` validiert.
+- **Fix (2026-02-10):** Zod-Schema mit `z.string().email('Ungültiges Email-Format')` auf Server-Seite
+- **Validierung (2026-02-10):** Server-Side Zod-Validierung + Supabase Auth eigene Email-Validierung = doppelte Absicherung.
 
-### BUG-7 (Medium): `redeemed_at` Timestamp wird nicht gesetzt
+### BUG-7 (Medium): `redeemed_at` Timestamp wird nicht gesetzt — **GEFIXT + VALIDIERT**
 - **Severity:** Medium
-- **Location:** `src/app/(auth)/register/page.tsx:101`
-- **Beschreibung:** Beim Einlösen eines Tokens wird nur `redeemed_by` gesetzt, aber `redeemed_at` bleibt `NULL`, obwohl die Spalte existiert
-- **Fix:** `redeemed_at: new Date().toISOString()` zum Update hinzufügen
-- **Priority:** Medium (Audit Trail unvollständig)
+- **Location:** `supabase/migrations/003_atomic_invitation_redemption.sql:36`
+- **Beschreibung:** Beim Einlösen eines Tokens wurde nur `redeemed_by` gesetzt, `redeemed_at` blieb `NULL`
+- **Fix (2026-02-10):** `redeem_invitation()` setzt `redeemed_at = NOW()` im UPDATE
+- **Validierung (2026-02-10):** Code-Review bestätigt. Beide Felder werden in einer atomaren Operation gesetzt.
 
-### BUG-3 (Low): Inkonsistenter Email-Enumeration-Schutz
+### BUG-10 (Low): Kein Rate Limiting auf Registration — **NEU**
 - **Severity:** Low
-- **Location:** `src/app/(auth)/register/page.tsx:89` vs. `src/app/(auth)/forgot-password/page.tsx:33`
+- **Location:** `src/app/api/register/route.ts`
+- **Beschreibung:** `/api/register` hat kein Rate Limiting. Angreifer kann Registration-Versuche spammen, um Token zu validieren oder Supabase Auth zu belasten.
+- **Fix-Vorschlag:** IP-basiertes Rate Limiting auf Registration-Endpoint (z.B. max. 5 Registrierungen pro IP pro Stunde)
+- **Priority:** Low (Token-Entropy macht Brute-Force impraktikabel)
+
+### BUG-11 (Low): Kein Rate Limiting auf Forgot Password — **NEU**
+- **Severity:** Low
+- **Location:** `src/app/(auth)/forgot-password/page.tsx:28`
+- **Beschreibung:** Forgot-Password nutzt Client-Side Supabase direkt — kein Server-seitiges Rate Limiting. Angreifer kann Password-Reset-Emails spammen.
+- **Fix-Vorschlag:** Server-Side API Route mit Rate Limiting (ähnlich wie `/api/login`)
+- **Priority:** Low (Supabase hat eigenes Email-Rate-Limiting)
+
+### BUG-3 (Low): Inkonsistenter Email-Enumeration-Schutz — **OFFEN**
+- **Severity:** Low
+- **Location:** `src/app/api/register/route.ts:51` vs. `src/app/(auth)/forgot-password/page.tsx:33`
 - **Beschreibung:** Register zeigt "Diese Email-Adresse ist bereits registriert" (verrät ob Email existiert), während Forgot-Password generische Meldung zeigt
 - **Fix:** Register sollte ebenfalls generische Fehlermeldung zeigen
 - **Priority:** Low (inkonsistent, aber in Registrierung schwer zu vermeiden wegen UX)
 
-### BUG-8 (Low): Auth-Callback `next` Parameter nicht validiert
+### BUG-8 (Low): Auth-Callback `next` Parameter nicht validiert — **OFFEN**
 - **Severity:** Low
 - **Location:** `src/app/auth/callback/route.ts:8`
 - **Beschreibung:** Der `next` Query-Parameter wird nicht validiert. Durch `${origin}${next}` ist ein offener Redirect zwar nicht direkt möglich, aber der Parameter sollte trotzdem auf interne Pfade beschränkt werden (Defense-in-Depth).
@@ -382,38 +416,46 @@ Neu benötigt:
 
 | Bug | Severity | Typ | Status |
 |-----|----------|-----|--------|
-| BUG-1: Race Condition Token-Einlösung | Critical | Security | **Gefixt** (003_atomic_invitation_redemption.sql + /api/register) |
-| BUG-4: Rate Limiting fehlt | Critical | Security | Offen |
-| BUG-6: Invitation-Tokens öffentlich lesbar | Critical | Security | **Gefixt** (002_fix_invitation_token_rls.sql) |
-| BUG-2: Nur client-seitige Email-Validierung | Medium | Validation | Offen |
+| BUG-1: Race Condition Token-Einlösung | Critical | Security | **Gefixt + Validiert** ✅ |
+| BUG-4: Rate Limiting fehlt | Critical | Security | **Gefixt + Validiert** ✅ |
+| BUG-6: Invitation-Tokens öffentlich lesbar | Critical | Security | **Gefixt + Validiert** ✅ |
+| BUG-2: Nur client-seitige Email-Validierung | Medium | Validation | **Gefixt + Validiert** ✅ |
+| BUG-7: `redeemed_at` nicht gesetzt | Medium | Data Integrity | **Gefixt + Validiert** ✅ |
+| BUG-9: Rate Limit nur per Email, nicht IP | Medium | Security | **Neu — Offen** |
 | BUG-5: Session-Timeout nicht konfiguriert | Medium | Config | Offen |
-| BUG-7: `redeemed_at` nicht gesetzt | Medium | Data Integrity | **Gefixt** (register/page.tsx) |
 | BUG-3: Inkonsistenter Email-Enumeration-Schutz | Low | Security/UX | Offen |
 | BUG-8: Auth-Callback `next` nicht validiert | Low | Security | Offen |
+| BUG-10: Kein Rate Limit auf Registration | Low | Security | **Neu — Offen** |
+| BUG-11: Kein Rate Limit auf Forgot Password | Low | Security | **Neu — Offen** |
 
 ---
 
 ## Summary
 
-- **Acceptance Criteria:** 7/9 bestanden, 2 mit Bugs
-- **Edge Cases:** 4/6 bestanden, 2 nicht implementiert
-- **Bugs gefunden:** 8 (3 Critical, 3 Medium, 2 Low) — davon 3 gefixt (BUG-1, BUG-6, BUG-7)
-- **Feature ist NICHT production-ready** (1 Critical Security Issue offen: BUG-4)
+- **Acceptance Criteria:** 9/9 bestanden ✅
+- **Edge Cases:** 5/6 bestanden, 1 offen (Session-Timeout)
+- **Bugs gesamt:** 11 (3 Critical, 3 Medium, 5 Low)
+- **Gefixt + Validiert:** 5 (BUG-1, BUG-2, BUG-4, BUG-6, BUG-7)
+- **Offen:** 6 (1 Medium-Neu, 1 Medium, 2 Low, 2 Low-Neu)
+- **Feature ist BEDINGT production-ready** ✅ — Alle 3 Critical Bugs sind gefixt und validiert
 
 ---
 
 ## Recommendation
 
-**Vor Deployment MÜSSEN gefixt werden:**
-1. ~~**BUG-6 (Critical):** Invitation-Tokens RLS-Policy einschränken~~ **GEFIXT**
-2. ~~**BUG-1 (Critical):** Token-Registrierung in atomare Server-Side API-Route verschieben~~ **GEFIXT**
-3. **BUG-4 (Critical):** Rate Limiting für Login implementieren (5 Versuche/Minute)
+### Gefixt + Validiert (kein Handlungsbedarf):
+1. ~~**BUG-1 (Critical):** Race Condition Token-Einlösung~~ ✅
+2. ~~**BUG-4 (Critical):** Rate Limiting fehlt~~ ✅
+3. ~~**BUG-6 (Critical):** Invitation-Tokens öffentlich lesbar~~ ✅
+4. ~~**BUG-2 (Medium):** Client-seitige Email-Validierung~~ ✅
+5. ~~**BUG-7 (Medium):** `redeemed_at` nicht gesetzt~~ ✅
 
-**Sollten gefixt werden:**
+### Sollten zeitnah gefixt werden (nächster Sprint):
+6. **BUG-9 (Medium):** IP-basiertes Rate Limiting zusätzlich zum Email-basierten
+7. **BUG-5 (Medium):** Session-Timeout im Supabase Dashboard auf 7 Tage konfigurieren
 
-4. ~~**BUG-7:** `redeemed_at` Timestamp setzen~~ **GEFIXT**
-5. **BUG-5:** Session-Timeout im Supabase Dashboard auf 7 Tage konfigurieren
-
-**Nice-to-have:**
-6. **BUG-3:** Email-Enumeration-Schutz konsistent machen
-7. **BUG-8:** `next` Parameter validieren
+### Nice-to-have (Backlog):
+8. **BUG-3 (Low):** Email-Enumeration-Schutz konsistent machen
+9. **BUG-8 (Low):** `next` Parameter validieren
+10. **BUG-10 (Low):** Rate Limiting auf Registration-Endpoint
+11. **BUG-11 (Low):** Rate Limiting auf Forgot-Password (Server-Side Route)
