@@ -83,7 +83,7 @@ export function IdeaForm({ mode, ideaId, initialData }: IdeaFormProps) {
     const ideaData = {
       title: title.trim(),
       description: description.trim(),
-      category_id: categoryId || null,
+      category_id: categoryId && categoryId !== 'none' ? categoryId : null,
     }
 
     if (mode === 'create') {
@@ -171,6 +171,7 @@ export function IdeaForm({ mode, ideaId, initialData }: IdeaFormProps) {
                 <SelectValue placeholder="Kategorie wählen..." />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="none">Keine Kategorie</SelectItem>
                 {categories.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id}>
                     {cat.name}

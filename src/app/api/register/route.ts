@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
@@ -11,6 +12,7 @@ const RegisterSchema = z.object({
 // POST /api/register - Atomic registration with invitation token
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const admin = createAdminClient()
 
   // 1. Validate input
   const body = await request.json().catch(() => ({}))
@@ -24,8 +26,8 @@ export async function POST(request: Request) {
 
   const { token, email, password } = parsed.data
 
-  // 2. Validate token FIRST (before creating user)
-  const { data: validation, error: tokenError } = await supabase
+  // 2. Validate token FIRST (before creating user) — admin client (anon cannot call this)
+  const { data: validation, error: tokenError } = await admin
     .rpc('validate_invitation_token', { p_token: token.trim() })
 
   if (tokenError || !validation || !validation.valid) {
@@ -66,8 +68,8 @@ export async function POST(request: Request) {
     )
   }
 
-  // 4. Atomically redeem invitation (with row lock to prevent race condition)
-  const { data: redemption, error: redeemError } = await supabase
+  // 4. Atomically redeem invitation (admin client — with row lock to prevent race condition)
+  const { data: redemption, error: redeemError } = await admin
     .rpc('redeem_invitation', {
       p_token: token.trim(),
       p_user_id: signUpData.user.id,

@@ -8,7 +8,7 @@ import { Header } from '@/components/header'
 import { IdeaCard } from '@/components/idea-card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Lightbulb } from 'lucide-react'
+import { Plus, Lightbulb, AlertCircle } from 'lucide-react'
 
 type IdeaRow = {
   id: string
@@ -24,6 +24,7 @@ export default function Home() {
   const { user, isLoading: authLoading } = useAuth()
   const [ideas, setIdeas] = useState<IdeaRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (authLoading || !user) return
@@ -33,8 +34,12 @@ export default function Home() {
       .from('ideas')
       .select('id, title, description, status, created_at, category:categories(name), author:profiles(email)')
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (data) setIdeas(data as unknown as IdeaRow[])
+      .then(({ data, error: queryError }) => {
+        if (queryError) {
+          setError('Ideen konnten nicht geladen werden.')
+        } else if (data) {
+          setIdeas(data as unknown as IdeaRow[])
+        }
         setIsLoading(false)
       })
   }, [authLoading, user])
@@ -78,6 +83,12 @@ export default function Home() {
           <div className="space-y-4">
             <Skeleton className="h-32 w-full" />
             <Skeleton className="h-32 w-full" />
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-white p-12 text-center">
+            <AlertCircle className="mb-4 h-12 w-12 text-red-300" />
+            <h3 className="text-lg font-medium text-gray-900">Fehler</h3>
+            <p className="mt-1 text-sm text-gray-500">{error}</p>
           </div>
         ) : ideas.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-white p-12 text-center">

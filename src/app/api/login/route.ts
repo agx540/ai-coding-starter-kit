@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { z } from 'zod'
@@ -11,6 +12,7 @@ const LoginSchema = z.object({
 // POST /api/login - Login with rate limiting (BUG-4 fix)
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const admin = createAdminClient()
 
   // 1. Validate input
   const body = await request.json().catch(() => ({}))
@@ -22,14 +24,15 @@ export async function POST(request: Request) {
     )
   }
 
-  const { email, password } = parsed.data
+  const email = parsed.data.email.toLowerCase().trim()
+  const password = parsed.data.password
 
   // 2. Get client IP for logging
   const headerStore = await headers()
   const ip = headerStore.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
 
-  // 3. Check rate limit
-  const { data: rateLimit, error: rateLimitError } = await supabase
+  // 3. Check rate limit (admin client — anon cannot call this function)
+  const { data: rateLimit, error: rateLimitError } = await admin
     .rpc('check_login_rate_limit', { p_email: email })
 
   if (rateLimitError) {
@@ -49,15 +52,15 @@ export async function POST(request: Request) {
     )
   }
 
-  // 4. Attempt login
+  // 4. Attempt login (regular client — sets session cookies)
   const { data, error: authError } = await supabase.auth.signInWithPassword({
     email,
     password,
   })
 
   if (authError || !data.session) {
-    // Record failed attempt
-    await supabase.rpc('record_failed_login', { p_email: email, p_ip: ip })
+    // Record failed attempt (admin client)
+    await admin.rpc('record_failed_login', { p_email: email, p_ip: ip })
 
     const remaining = (rateLimit.remaining_attempts ?? 1) - 1
     return NextResponse.json(
@@ -69,8 +72,8 @@ export async function POST(request: Request) {
     )
   }
 
-  // 5. Success — clear failed attempts
-  await supabase.rpc('clear_login_attempts', { p_email: email })
+  // 5. Success — clear failed attempts (admin client)
+  await admin.rpc('clear_login_attempts', { p_email: email })
 
   return NextResponse.json({ success: true })
 }

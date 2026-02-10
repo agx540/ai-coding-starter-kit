@@ -56,6 +56,7 @@ export default function IdeaDetailPage() {
       .single()
       .then(({ data, error }) => {
         if (error || !data) {
+          toast.error('Idee nicht gefunden.')
           router.push('/')
           return
         }
