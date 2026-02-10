@@ -1,14 +1,45 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/components/auth-provider'
 import { Header } from '@/components/header'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { IdeaCard } from '@/components/idea-card'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Plus, Lightbulb } from 'lucide-react'
+
+type IdeaRow = {
+  id: string
+  title: string
+  description: string
+  status: string
+  created_at: string
+  category: { name: string } | null
+  author: { email: string } | null
+}
 
 export default function Home() {
-  const { user, isLoading } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
+  const [ideas, setIdeas] = useState<IdeaRow[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  if (isLoading) {
+  useEffect(() => {
+    if (authLoading || !user) return
+
+    const supabase = createClient()
+    supabase
+      .from('ideas')
+      .select('id, title, description, status, created_at, category:categories(name), author:profiles(email)')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (data) setIdeas(data as unknown as IdeaRow[])
+        setIsLoading(false)
+      })
+  }, [authLoading, user])
+
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="border-b bg-white">
@@ -19,7 +50,11 @@ export default function Home() {
         </div>
         <main className="mx-auto max-w-5xl px-4 py-8">
           <Skeleton className="h-8 w-64 mb-6" />
-          <Skeleton className="h-40 w-full" />
+          <div className="space-y-4">
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
         </main>
       </div>
     )
@@ -29,21 +64,53 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <Header />
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <h2 className="mb-6 text-2xl font-semibold">Dashboard</h2>
-        <Card>
-          <CardHeader>
-            <CardTitle>Willkommen beim Voting Board</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600">
-              Eingeloggt als{' '}
-              <span className="font-medium text-gray-900">{user?.email}</span>
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-2xl font-semibold">Ideen-Board</h2>
+          <Button asChild>
+            <Link href="/ideas/new">
+              <Plus className="mr-1 h-4 w-4" />
+              Neue Idee
+            </Link>
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        ) : ideas.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-white p-12 text-center">
+            <Lightbulb className="mb-4 h-12 w-12 text-gray-300" />
+            <h3 className="text-lg font-medium text-gray-900">
+              Noch keine Ideen
+            </h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Sei der Erste und reiche eine Idee ein!
             </p>
-            <p className="mt-2 text-sm text-gray-500">
-              Das Voting Board wird in den nächsten Features implementiert.
-            </p>
-          </CardContent>
-        </Card>
+            <Button className="mt-4" asChild>
+              <Link href="/ideas/new">
+                <Plus className="mr-1 h-4 w-4" />
+                Erste Idee einreichen
+              </Link>
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {ideas.map((idea) => (
+              <IdeaCard
+                key={idea.id}
+                id={idea.id}
+                title={idea.title}
+                description={idea.description}
+                status={idea.status}
+                category={idea.category?.name ?? null}
+                authorEmail={idea.author?.email ?? 'Unbekannt'}
+                createdAt={idea.created_at}
+              />
+            ))}
+          </div>
+        )}
       </main>
     </div>
   )
