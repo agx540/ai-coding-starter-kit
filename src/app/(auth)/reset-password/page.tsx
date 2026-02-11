@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,30 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [isReady, setIsReady] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    const supabase = createClient()
+
+    // Listen for PASSWORD_RECOVERY event (triggered after token exchange)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsReady(true)
+      }
+    })
+
+    // Also check if user already has a session (e.g. came via server-side callback)
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setIsReady(true)
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,6 +87,19 @@ export default function ResetPasswordPage() {
           <CardDescription>
             Dein Passwort wurde erfolgreich geändert. Du wirst gleich
             weitergeleitet...
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  if (!isReady) {
+    return (
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Sitzung wird geladen...</CardTitle>
+          <CardDescription>
+            Bitte warte einen Moment.
           </CardDescription>
         </CardHeader>
       </Card>
