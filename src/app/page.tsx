@@ -18,6 +18,7 @@ type IdeaRow = {
   created_at: string
   category: { name: string } | null
   author: { email: string } | null
+  votes: { count: number }[]
 }
 
 export default function Home() {
@@ -32,7 +33,7 @@ export default function Home() {
     const supabase = createClient()
     supabase
       .from('ideas')
-      .select('id, title, description, status, created_at, category:categories(name), author:profiles(email)')
+      .select('id, title, description, status, created_at, category:categories(name), author:profiles(email), votes(count)')
       .order('created_at', { ascending: false })
       .then(({ data, error: queryError }) => {
         if (queryError) {
@@ -118,6 +119,7 @@ export default function Home() {
                 category={idea.category?.name ?? null}
                 authorEmail={idea.author?.email ?? 'Unbekannt'}
                 createdAt={idea.created_at}
+                voteCount={idea.votes?.[0]?.count ?? 0}
               />
             ))}
           </div>

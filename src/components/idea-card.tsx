@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { VoteButton } from '@/components/vote-button'
 
 type IdeaCardProps = {
   id: string
@@ -12,6 +13,7 @@ type IdeaCardProps = {
   category: string | null
   authorEmail: string
   createdAt: string
+  voteCount: number
 }
 
 export function IdeaCard({
@@ -22,6 +24,7 @@ export function IdeaCard({
   category,
   authorEmail,
   createdAt,
+  voteCount,
 }: IdeaCardProps) {
   const date = new Date(createdAt).toLocaleDateString('de-DE', {
     day: '2-digit',
@@ -30,8 +33,11 @@ export function IdeaCard({
   })
 
   return (
-    <Link href={`/ideas/${id}`}>
-      <Card className="transition-shadow hover:shadow-md">
+    <Card className="flex transition-shadow hover:shadow-md">
+      <div className="flex items-center border-r px-3">
+        <VoteButton ideaId={id} initialVoteCount={voteCount} />
+      </div>
+      <Link href={`/ideas/${id}`} className="min-w-0 flex-1">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="text-base leading-snug">{title}</CardTitle>
@@ -53,7 +59,7 @@ export function IdeaCard({
             {authorEmail} &middot; {date}
           </p>
         </CardContent>
-      </Card>
-    </Link>
+      </Link>
+    </Card>
   )
 }

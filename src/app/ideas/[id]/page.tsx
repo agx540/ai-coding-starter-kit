@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { VoteButton } from '@/components/vote-button'
 
 type Idea = {
   id: string
@@ -34,6 +35,7 @@ type Idea = {
   author_id: string
   category: { name: string } | null
   author: { email: string } | null
+  votes: { count: number }[]
 }
 
 export default function IdeaDetailPage() {
@@ -51,7 +53,7 @@ export default function IdeaDetailPage() {
     const supabase = createClient()
     supabase
       .from('ideas')
-      .select('*, category:categories(name), author:profiles(email)')
+      .select('*, category:categories(name), author:profiles(email), votes(count)')
       .eq('id', ideaId)
       .single()
       .then(({ data, error }) => {
@@ -128,13 +130,20 @@ export default function IdeaDetailPage() {
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between gap-4">
-              <div className="space-y-2">
-                <CardTitle className="text-xl">{idea.title}</CardTitle>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">{idea.status}</Badge>
-                  {idea.category && (
-                    <Badge variant="outline">{idea.category.name}</Badge>
-                  )}
+              <div className="flex items-start gap-4">
+                <VoteButton
+                  ideaId={idea.id}
+                  initialVoteCount={idea.votes?.[0]?.count ?? 0}
+                  size="lg"
+                />
+                <div className="space-y-2">
+                  <CardTitle className="text-xl">{idea.title}</CardTitle>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">{idea.status}</Badge>
+                    {idea.category && (
+                      <Badge variant="outline">{idea.category.name}</Badge>
+                    )}
+                  </div>
                 </div>
               </div>
               {isAuthor && (
