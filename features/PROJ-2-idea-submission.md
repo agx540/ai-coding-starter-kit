@@ -495,10 +495,144 @@ Neu benötigt:
 
 ### Recommended Fix Priority
 
-1. **BUG-4 (High):** Add column-level restrictions to prevent `status`, `author_id`, `created_at` modification. Options: (a) Create a database trigger that prevents these columns from being changed on UPDATE, or (b) use a more restrictive RLS policy, or (c) use a Postgres function for updates that only allows specific columns.
-2. **BUG-9 (Medium):** Add a "Keine Kategorie" option to the Select dropdown.
-3. **BUG-5 (Medium):** Fix as part of BUG-4 solution (immutable columns trigger).
-4. **BUG-6 (Medium):** Set search_path on `update_updated_at` function.
-5. **BUG-7 (Low):** Update RLS policies to use `(SELECT auth.uid())` pattern.
-6. **BUG-11 (Low):** Add error handling to home page query.
-7. **BUG-12 (Low):** Show "not found" toast before redirecting on idea detail page.
+1. ~~**BUG-4 (High):** Add column-level restrictions~~ **GEFIXT**
+2. ~~**BUG-9 (Medium):** Add a "Keine Kategorie" option~~ **GEFIXT**
+3. ~~**BUG-5 (Medium):** Fix as part of BUG-4 solution~~ **GEFIXT**
+4. ~~**BUG-6 (Medium):** Set search_path on `update_updated_at` function~~ **GEFIXT**
+5. ~~**BUG-7 (Low):** Update RLS policies to use `(SELECT auth.uid())` pattern~~ **TEILWEISE GEFIXT** (ideas + categories ja, profiles + invitations nein)
+6. ~~**BUG-11 (Low):** Add error handling to home page query~~ **GEFIXT**
+7. ~~**BUG-12 (Low):** Show "not found" toast before redirecting~~ **GEFIXT**
+
+---
+
+## QA Revalidation Results (2026-02-11)
+
+**Tested:** 2026-02-11
+**Tester:** QA Engineer Agent (Code-Level Review + Live Database Verification via Supabase MCP)
+**Method:** Full source code review of all PROJ-1 and PROJ-2 files + live database inspection + Supabase advisors
+**Commits reviewed:** `56cf304` (Reset Password fix), `1c3dbad` (security hardening), `f12aa4d` (PROJ-2 implementation)
+
+---
+
+### PROJ-2 Bug Fix Verification
+
+| Bug | Fix Status | Verification |
+|-----|-----------|--------------|
+| **BUG-4** (status manipulation) | **GEFIXT** | DB trigger `protect_ideas_immutable_columns` raises exception if `status`, `author_id`, or `created_at` are changed. Verified in live DB. |
+| **BUG-5** (created_at manipulation) | **GEFIXT** | Same trigger as BUG-4. `created_at` is immutable. Verified in live DB. |
+| **BUG-6** (mutable search_path) | **GEFIXT** | All 8 public functions have `search_path=''`. Verified via `pg_proc.proconfig`. |
+| **BUG-7** (RLS auth.uid() pattern) | **TEILWEISE GEFIXT** | `ideas` and `categories` policies use `(SELECT auth.uid())`. `profiles` (3 policies) and `invitations` (4 policies) still use `auth.uid()` directly. |
+| **BUG-9** (category deselect) | **GEFIXT** | `<SelectItem value="none">Keine Kategorie</SelectItem>` added in `idea-form.tsx:174`. Logic at line 86: `categoryId && categoryId !== 'none' ? categoryId : null`. |
+| **BUG-11** (home page error handling) | **GEFIXT** | Error state with `AlertCircle` icon and message in `page.tsx:87-92`. Query error sets `setError('Ideen konnten nicht geladen werden.')`. |
+| **BUG-12** (silent redirect) | **GEFIXT** | `toast.error('Idee nicht gefunden.')` shown before redirect in `ideas/[id]/page.tsx:59`. |
+
+### PROJ-1 Critical Bug Fix Verification
+
+| Bug | Fix Status | Verification |
+|-----|-----------|--------------|
+| **BUG-12** (SECURITY DEFINER callable by anon) | **GEFIXT** | All 5 sensitive functions (`clear_login_attempts`, `record_failed_login`, `check_login_rate_limit`, `validate_invitation_token`, `redeem_invitation`) are granted to `service_role` only. Trigger functions (`handle_new_user`, `update_updated_at`, `protect_ideas_immutable_columns`) correctly retain PUBLIC access. Verified via `information_schema.routine_privileges`. |
+| **BUG-13** (search_path mutable) | **GEFIXT** | All 8 functions have `search_path=''` set. |
+| **BUG-15** (email not normalized) | **GEFIXT** | Login route normalizes email to lowercase (commit `1c3dbad`). |
+
+### PROJ-1 Regression Check
+
+| Check | Result |
+|-------|--------|
+| Login page (`/login`) intact | PASS |
+| Register page (`/register`) with invitation flow | PASS |
+| Middleware redirects unauthenticated users | PASS |
+| AuthProvider manages user/session state | PASS |
+| Header with logout functionality | PASS |
+| Password reset flow (forgot-password + reset-password) | FIXED (was broken, `56cf304` fixes redirect to use client-side token handling) |
+| Rate limiting on login (5 attempts/60s) | PASS (functions restricted to service_role) |
+| Invitation token validation | PASS (function restricted to service_role) |
+
+**Regression Result:** PROJ-1 NOT affected by PROJ-2 bug fixes. Password reset flow separately fixed.
+
+---
+
+### New Findings
+
+#### BUG-13 (Low): Password reset page has no loading timeout
+- **Severity:** Low
+- **Category:** UX / Reliability
+- **Location:** `src/app/(auth)/reset-password/page.tsx`
+- **Description:** If the `PASSWORD_RECOVERY` auth event never fires (e.g., token exchange fails silently), the user is stuck on "Sitzung wird geladen..." forever with no way to recover.
+- **Fix:** Add a timeout (e.g., 10 seconds) that shows an error message or redirects to forgot-password page.
+
+#### BUG-14 (Low): Forgot-password has no error handling on API call
+- **Severity:** Low
+- **Category:** UX / Error Handling
+- **Location:** `src/app/(auth)/forgot-password/page.tsx:27-30`
+- **Description:** `resetPasswordForEmail()` has no try-catch. If the Supabase call fails (network error), the user still sees "Email gesendet" success message. The call also ignores the `error` return value.
+- **Fix:** Add try-catch and check `{ error }` return value.
+
+#### BUG-15 (Low): Categories query in idea-form has no error handling
+- **Severity:** Low
+- **Category:** UX / Error Handling
+- **Location:** `src/components/idea-form.tsx:46-55`
+- **Description:** The categories fetch `.then(({ data })` ignores the `error` field. If categories fail to load, the dropdown shows empty options with no indication to the user.
+- **Fix:** Add error handling and show a message if categories can't be loaded.
+
+#### PERF-1 (Info): 7 RLS policies on profiles/invitations still use auth.uid() directly
+- **Severity:** Info (Performance)
+- **Category:** Performance / Best Practice
+- **Location:** `profiles` (3 policies), `invitations` (4 policies)
+- **Description:** Migration 006 fixed `ideas` and `categories` but missed `profiles` and `invitations`. These policies re-evaluate `auth.uid()` per row instead of once per query.
+- **Fix:** Update policies to use `(SELECT auth.uid())` pattern.
+
+#### PERF-2 (Info): Redundant index on invitations.token
+- **Severity:** Info (Performance)
+- **Category:** Database Optimization
+- **Description:** `idx_invitations_token` (non-unique btree) duplicates `invitations_token_key` (unique btree). Drop the redundant index.
+
+---
+
+### Security Review Summary
+
+| Area | Status |
+|------|--------|
+| RLS enabled on all 5 tables | PASS |
+| SECURITY DEFINER functions restricted to service_role | PASS |
+| All functions have immutable search_path | PASS |
+| Immutable columns trigger on ideas | PASS |
+| Ideas: author-only edit/delete via RLS | PASS |
+| Categories: admin-only management via RLS | PASS |
+| XSS protection (React auto-escaping, no dangerouslySetInnerHTML) | PASS |
+| SQL injection protection (Supabase parameterized queries) | PASS |
+| Input validation (client + DB CHECK constraints) | PASS |
+| Double-submit prevention (isSubmitting state) | PASS |
+| Leaked password protection | STILL DISABLED (Supabase config, not code) |
+
+---
+
+### Updated Bugs Summary (PROJ-2)
+
+| Bug | Severity | Previous Status | Current Status |
+|-----|----------|----------------|----------------|
+| BUG-4: Status manipulation | High | Open | **Gefixt + Validiert** |
+| BUG-5: created_at manipulation | Medium | Open | **Gefixt + Validiert** |
+| BUG-6: Mutable search_path | Medium | Open | **Gefixt + Validiert** |
+| BUG-9: Category deselect | Medium | Open | **Gefixt + Validiert** |
+| BUG-7: RLS auth.uid() pattern | Low | Open | **Teilweise Gefixt** (ideas+categories) |
+| BUG-11: Home page error handling | Low | Open | **Gefixt + Validiert** |
+| BUG-12: Silent redirect on detail | Low | Open | **Gefixt + Validiert** |
+| BUG-13: Reset-password no timeout | Low | NEW | Offen |
+| BUG-14: Forgot-password no error handling | Low | NEW | Offen |
+| BUG-15: Categories query no error handling | Low | NEW | Offen |
+| PERF-1: RLS InitPlan on profiles/invitations | Info | NEW | Offen |
+| PERF-2: Redundant index | Info | NEW | Offen |
+
+---
+
+### Production-Ready Decision
+
+**READY (bedingt)** -- All High and Medium severity bugs from the original QA are fixed and verified. Remaining open items are Low severity (UX improvements) and Info-level performance optimizations. No security blockers remain.
+
+### Remaining Fix Priority (Nice-to-have)
+
+1. **BUG-13 (Low):** Add timeout to reset-password loading state
+2. **BUG-14 (Low):** Add error handling to forgot-password
+3. **BUG-15 (Low):** Add error handling to categories query
+4. **PERF-1 (Info):** Update profiles/invitations RLS policies to use `(SELECT auth.uid())`
+5. **PERF-2 (Info):** Drop redundant `idx_invitations_token` index
