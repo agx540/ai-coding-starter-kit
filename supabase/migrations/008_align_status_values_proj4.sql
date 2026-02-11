@@ -21,3 +21,8 @@ ALTER TABLE public.ideas ADD CONSTRAINT ideas_status_check
 
 -- 4. Re-enable the immutable columns trigger
 ALTER TABLE public.ideas ENABLE TRIGGER ideas_protect_immutable_columns;
+
+-- 5. Enable Supabase Realtime for ideas and votes tables
+--    Required for live updates on the Idea Board (PROJ-4)
+ALTER PUBLICATION supabase_realtime ADD TABLE public.ideas;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.votes;
