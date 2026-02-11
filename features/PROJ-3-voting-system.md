@@ -407,4 +407,136 @@ Neu benötigt:
 3. **BUG-1 (Low):** try-catch um Supabase-Aufruf hinzufügen
 4. **BUG-2 (Low):** Redirect zum Login bei Auth-Fehler ergänzen
 5. **BUG-4 (Low):** DB-Trigger für immutable `created_at` auf votes (nice-to-have)
-6. **BUG-6 (Info):** Wird relevant bei Realtime-Feature (Backlog)
+6. **BUG-6 (Info → Low):** Jetzt relevant — siehe Regression-Test nach PROJ-4
+
+---
+
+## Regression Test nach PROJ-4 (Idea Board)
+
+**Tested:** 2026-02-11
+**Anlass:** PROJ-4 hat mehrere PROJ-3-relevante Dateien modifiziert
+**Method:** Statische Code-Analyse aller geänderten Dateien + Build-Verifikation
+
+---
+
+### Datei-Impact-Analyse
+
+| Datei | PROJ-3-Relevanz | PROJ-4 Änderung | Impact |
+|---|---|---|---|
+| `vote-button.tsx` | Kern-Komponente | **NICHT modifiziert** | Kein Impact |
+| `007_create_votes.sql` | Migration | **NICHT modifiziert** | Kein Impact |
+| `idea-card.tsx` | VoteButton-Integration | Badge-Farbe geändert (statusColor), Layout unverändert | Minimal |
+| `page.tsx` | Vote-Count-Query | Refactored: nutzt jetzt IdeaBoard, Query identisch | Mittel |
+| `ideas/[id]/page.tsx` | VoteButton (lg) | Badge-Farbe geändert (statusColor), VoteButton unverändert | Minimal |
+| `idea-board.tsx` | **NEU** (Realtime votes) | Realtime-Subscription auf `votes` Tabelle | **Hoch** |
+
+---
+
+### Acceptance Criteria Re-Test
+
+#### AC-1: Upvote-Button sichtbar
+- [x] Board: IdeaCard in IdeaBoard → `idea-board.tsx:237-247` → übergibt `voteCount` an IdeaCard → `idea-card.tsx:53` rendert VoteButton
+- [x] Detail: `ideas/[id]/page.tsx:149-153` → VoteButton mit `size="lg"` unverändert
+- **PASS** — VoteButton an beiden Stellen identisch gerendert
+
+#### AC-2: Klick erhöht Counter um 1
+- [x] `vote-button.tsx:35` → `setVoteCount((prev) => prev + 1)` — UNVERÄNDERT
+- [x] `vote-button.tsx:38-41` → INSERT in `votes` Tabelle — UNVERÄNDERT
+- **PASS** — Kern-Voting-Logik nicht berührt
+
+#### AC-3: Vote-Zähler Echtzeit-Update
+- [x] Optimistisches Update: `vote-button.tsx:35` — UNVERÄNDERT
+- [x] Vote-Count-Query: `page.tsx:26` → `votes(count)` — identische Query
+- [x] **NEU:** Realtime-Subscription in `idea-board.tsx:144-158` aktualisiert Board-Level Vote-Count
+- **PASS mit Hinweis** — Eigene Votes korrekt (optimistisch). Board-Sortierung reflektiert jetzt andere User-Votes via Realtime.
+
+#### AC-4: Nicht-eingeloggte Nutzer → kein Voten
+- [x] `middleware.ts:50-53` — UNVERÄNDERT
+- **PASS** — Keine Änderung
+
+#### AC-5: Vote mit User-ID, Idea-ID, Timestamp
+- [x] `vote-button.tsx:38-41` — UNVERÄNDERT
+- [x] `007_create_votes.sql` — UNVERÄNDERT
+- **PASS** — Keine Änderung
+
+#### AC-6: Optimistisches UI-Update
+- [x] `vote-button.tsx:34-54` → komplette handleVote Funktion — UNVERÄNDERT
+- **PASS** — Keine Änderung
+
+---
+
+### Edge Cases Re-Test
+
+#### EC-1: Debounce 300ms
+- [x] `vote-button.tsx:29-32` — UNVERÄNDERT
+- **PASS**
+
+#### EC-2: Netzwerkfehler → Rollback
+- [x] `vote-button.tsx:43-54` — UNVERÄNDERT
+- **PASS**
+
+#### EC-3: Gelöschte Idee
+- [x] `vote-button.tsx:47-48` — UNVERÄNDERT
+- **PASS**
+
+#### EC-4: Ausgeloggt während Voten
+- [x] `vote-button.tsx:49-50` — UNVERÄNDERT, BUG-2 weiterhin offen (Toast statt Redirect)
+- **PASS**
+
+---
+
+### BUG-6 Re-Evaluation: VoteButton-State sync mit Realtime
+
+**Severity-Upgrade: Info → Low**
+
+BUG-6 wurde im initialen QA als "Info" eingestuft mit Hinweis "Wird relevant bei Realtime-Feature". PROJ-4 hat jetzt Realtime implementiert. Konkretes Szenario:
+
+1. **User A und User B sehen das Board**
+2. **User B votet** → Realtime feuert INSERT auf votes
+3. `idea-board.tsx:147-158` → IdeaBoard-State aktualisiert Vote-Count von N auf N+1
+4. IdeaCard re-rendert mit `voteCount={N+1}` → VoteButton bekommt neuen `initialVoteCount={N+1}`
+5. **ABER:** VoteButton's `useState(initialVoteCount)` wurde bei N initialisiert und synchronisiert sich nicht
+6. **User A sieht weiterhin N statt N+1** auf der Karte
+
+**Impact:**
+- Eigene Votes: korrekt (optimistisches Update zeigt richtigen Count)
+- Andere User-Votes: VoteButton zeigt stale Count
+- Board-Sortierung: korrekt (IdeaBoard sortiert nach eigenem State, der via Realtime aktualisiert wird)
+- Count-Drift kann sich akkumulieren bei mehreren gleichzeitigen Usern
+
+**Mitigating Factors:**
+- Count wird bei Page-Refresh korrekt geladen
+- Für MVP mit wenigen Usern minimal sichtbar
+- Sortierung ist korrekt, nur Anzeige auf einzelner Karte stale
+
+**Fix-Vorschlag:** `useEffect` in VoteButton der `initialVoteCount`-Änderungen synchronisiert, oder Vote-Count-State in IdeaBoard hochziehen.
+
+---
+
+### Neue Findings durch PROJ-4
+
+#### BUG-7 (Info): Supabase Realtime nicht auf Tabellen aktiviert
+- **Severity:** Info (blockiert nur PROJ-4 Realtime, nicht PROJ-3)
+- **Location:** `idea-board.tsx:92-165`
+- **Description:** Die Realtime-Subscription auf `ideas` und `votes` Tabellen wird keine Events erhalten, solange Realtime nicht explizit aktiviert ist. Es fehlt `ALTER PUBLICATION supabase_realtime ADD TABLE ideas, votes;` in den Migrationen.
+- **Impact auf PROJ-3:** Keiner — PROJ-3 nutzt kein Realtime
+- **Impact auf PROJ-4:** Realtime-Features (Live-Updates, Board-Sync) funktionieren nicht bis Backend-Dev dies konfiguriert
+
+---
+
+### Regression Summary
+
+| Check | Status |
+|---|---|
+| `vote-button.tsx` unverändert | PASS |
+| `007_create_votes.sql` unverändert | PASS |
+| Alle 6 Acceptance Criteria | PASS (alle identisch) |
+| Alle 4 Edge Cases | PASS (alle identisch) |
+| Vote-Count-Query identisch | PASS |
+| Build erfolgreich | PASS |
+| BUG-6 Severity-Upgrade | Info → Low |
+| Neue Bugs eingeführt | 0 (BUG-7 betrifft nur PROJ-4) |
+
+### Regression-Ergebnis
+
+**PROJ-3 Voting System: NICHT betroffen durch PROJ-4.** Alle Kern-Funktionalitäten intakt. Die einzige Änderung ist das Severity-Upgrade von BUG-6 (Info → Low), da Realtime jetzt implementiert ist. Kein neuer PROJ-3-Bug wurde durch PROJ-4 eingeführt.

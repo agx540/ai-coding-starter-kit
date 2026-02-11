@@ -16,6 +16,21 @@ type IdeaCardProps = {
   voteCount: number
 }
 
+function statusColor(status: string): string {
+  switch (status) {
+    case 'Offen':
+      return 'border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200'
+    case 'Geplant':
+      return 'border-transparent bg-blue-100 text-blue-700 hover:bg-blue-200'
+    case 'In Arbeit':
+      return 'border-transparent bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+    case 'Erledigt':
+      return 'border-transparent bg-green-100 text-green-700 hover:bg-green-200'
+    default:
+      return 'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80'
+  }
+}
+
 export function IdeaCard({
   id,
   title,
@@ -42,9 +57,7 @@ export function IdeaCard({
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="text-base leading-snug">{title}</CardTitle>
             <div className="flex shrink-0 gap-1.5">
-              <Badge variant="secondary" className="text-xs">
-                {status}
-              </Badge>
+              <Badge className={statusColor(status)}>{status}</Badge>
               {category && (
                 <Badge variant="outline" className="text-xs">
                   {category}

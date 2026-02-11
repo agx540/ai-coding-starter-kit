@@ -25,6 +25,21 @@ import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { VoteButton } from '@/components/vote-button'
 
+function statusColor(status: string): string {
+  switch (status) {
+    case 'Offen':
+      return 'border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200'
+    case 'Geplant':
+      return 'border-transparent bg-blue-100 text-blue-700 hover:bg-blue-200'
+    case 'In Arbeit':
+      return 'border-transparent bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+    case 'Erledigt':
+      return 'border-transparent bg-green-100 text-green-700 hover:bg-green-200'
+    default:
+      return 'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80'
+  }
+}
+
 type Idea = {
   id: string
   title: string
@@ -139,7 +154,7 @@ export default function IdeaDetailPage() {
                 <div className="space-y-2">
                   <CardTitle className="text-xl">{idea.title}</CardTitle>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary">{idea.status}</Badge>
+                    <Badge className={statusColor(idea.status)}>{idea.status}</Badge>
                     {idea.category && (
                       <Badge variant="outline">{idea.category.name}</Badge>
                     )}
