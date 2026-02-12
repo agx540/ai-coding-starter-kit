@@ -1,6 +1,8 @@
 # PROJ-4: Idea Board
 
-## Status: 🟢 Implemented (QA passed)
+## Status: ✅ Deployed (2026-02-11)
+
+**Production URL:** <https://voting-app-kappa-blush.vercel.app>
 
 ## Abhängigkeiten
 - Benötigt: PROJ-1 (User Authentication) - Board nur für eingeloggte Nutzer sichtbar

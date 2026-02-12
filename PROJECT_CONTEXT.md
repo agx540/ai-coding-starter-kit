@@ -8,7 +8,9 @@ Build web applications faster with AI agents handling Requirements, Architecture
 ---
 
 ## Aktueller Status
-Template ready - Start by defining your first feature!
+Voting Board MVP — 4 von 7 Features deployed.
+
+**Production URL:** <https://voting-app-kappa-blush.vercel.app>
 
 ---
 
@@ -32,16 +34,13 @@ Template ready - Start by defining your first feature!
 
 ## Features Roadmap
 
-### Your Features Will Appear Here
-
-Start by defining your first feature using the Requirements Engineer agent:
-```
-Read .claude/agents/requirements-engineer.md and create a feature spec for [your feature idea]
-```
-
-Example roadmap structure:
-- [PROJ-1] Your First Feature → 🔵 Planned → [Spec](/features/PROJ-1-feature-name.md)
-- [PROJ-2] Your Second Feature → ⚪ Backlog
+- [PROJ-1] User Authentication → ✅ Done → [Spec](/features/PROJ-1-user-authentication.md)
+- [PROJ-2] Idea Submission → ✅ Done → [Spec](/features/PROJ-2-idea-submission.md)
+- [PROJ-3] Voting System → ✅ Done → [Spec](/features/PROJ-3-voting-system.md)
+- [PROJ-4] Idea Board → ✅ Done → [Spec](/features/PROJ-4-idea-board.md)
+- [PROJ-5] Admin Category Management → 🔵 Planned → [Spec](/features/PROJ-5-admin-category-management.md)
+- [PROJ-6] Admin Idea Moderation → 🔵 Planned → [Spec](/features/PROJ-6-admin-idea-moderation.md)
+- [PROJ-7] Admin User Invitation → 🔵 Planned → [Spec](/features/PROJ-7-admin-user-invitation.md)
 
 ---
 
