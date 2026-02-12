@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -22,10 +22,40 @@ function RegisterForm() {
 
   const [token, setToken] = useState(tokenFromUrl)
   const [email, setEmail] = useState('')
+  const [emailFromToken, setEmailFromToken] = useState(false)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isValidatingToken, setIsValidatingToken] = useState(false)
+
+  // When token is present, validate it and prefill email
+  useEffect(() => {
+    if (!tokenFromUrl) return
+
+    const validateToken = async () => {
+      setIsValidatingToken(true)
+      try {
+        const res = await fetch('/api/register/validate-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: tokenFromUrl }),
+        })
+        const data = await res.json()
+        if (res.ok && data.email) {
+          setEmail(data.email)
+          setEmailFromToken(true)
+        } else if (!res.ok) {
+          setError(data.error || 'Ungültiger Einladungscode.')
+        }
+      } catch {
+        // Token validation failed silently - user can still enter email manually
+      }
+      setIsValidatingToken(false)
+    }
+
+    validateToken()
+  }, [tokenFromUrl])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -99,19 +129,32 @@ function RegisterForm() {
               value={token}
               onChange={(e) => setToken(e.target.value)}
               required
+              readOnly={!!tokenFromUrl}
+              className={tokenFromUrl ? 'bg-gray-50' : ''}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="name@beispiel.de"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-            />
+            {isValidatingToken ? (
+              <Skeleton className="h-10 w-full" />
+            ) : (
+              <Input
+                id="email"
+                type="email"
+                placeholder="name@beispiel.de"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                readOnly={emailFromToken}
+                className={emailFromToken ? 'bg-gray-50' : ''}
+                autoComplete="email"
+              />
+            )}
+            {emailFromToken && (
+              <p className="text-xs text-gray-500">
+                Email-Adresse aus der Einladung vorausgefüllt.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Passwort</Label>
@@ -140,7 +183,7 @@ function RegisterForm() {
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full" disabled={isLoading || isValidatingToken}>
             {isLoading ? 'Wird registriert...' : 'Registrieren'}
           </Button>
           <span className="text-center text-sm text-gray-500">

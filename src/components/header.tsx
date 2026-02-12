@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useAuth } from '@/components/auth-provider'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -7,12 +8,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogOut } from 'lucide-react'
+import { LogOut, Mail } from 'lucide-react'
 
 export function Header() {
-  const { user, signOut } = useAuth()
+  const { user, isAdmin, signOut } = useAuth()
 
   if (!user) return null
 
@@ -36,6 +38,18 @@ export function Header() {
             <DropdownMenuItem className="text-sm text-gray-500" disabled>
               {user.email}
             </DropdownMenuItem>
+            {isAdmin && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/admin/invitations">
+                    <Mail className="mr-2 h-4 w-4" />
+                    Einladungen verwalten
+                  </Link>
+                </DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" />
               Ausloggen
