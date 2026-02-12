@@ -50,7 +50,7 @@ type Idea = {
   author_id: string
   category: { name: string } | null
   author: { email: string } | null
-  votes: { count: number }[]
+  vote_count: number
 }
 
 export default function IdeaDetailPage() {
@@ -67,8 +67,8 @@ export default function IdeaDetailPage() {
   useEffect(() => {
     const supabase = createClient()
     supabase
-      .from('ideas')
-      .select('*, category:categories(name), author:profiles(email), votes.count()')
+      .from('ideas_with_vote_count')
+      .select('*')
       .eq('id', ideaId)
       .single()
       .then(({ data, error }) => {
@@ -148,7 +148,7 @@ export default function IdeaDetailPage() {
               <div className="flex items-start gap-4">
                 <VoteButton
                   ideaId={idea.id}
-                  initialVoteCount={idea.votes?.[0]?.count ?? 0}
+                  initialVoteCount={idea.vote_count ?? 0}
                   size="lg"
                 />
                 <div className="space-y-2">

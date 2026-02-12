@@ -16,7 +16,7 @@ export type IdeaRow = {
   created_at: string
   category: { name: string } | null
   author: { email: string } | null
-  votes: { count: number }[]
+  vote_count: number
 }
 
 const PAGE_SIZE = 20
@@ -63,7 +63,7 @@ export function IdeaBoard({ initialIdeas }: IdeaBoardProps) {
 
     result.sort((a, b) => {
       if (sortBy === 'votes') {
-        return (b.votes?.[0]?.count ?? 0) - (a.votes?.[0]?.count ?? 0)
+        return (b.vote_count ?? 0) - (a.vote_count ?? 0)
       }
       if (sortBy === 'newest') {
         return (
@@ -99,10 +99,8 @@ export function IdeaBoard({ initialIdeas }: IdeaBoardProps) {
         { event: 'INSERT', schema: 'public', table: 'ideas' },
         async (payload) => {
           const { data } = await supabase
-            .from('ideas')
-            .select(
-              'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes.count()'
-            )
+            .from('ideas_with_vote_count')
+            .select('*')
             .eq('id', payload.new.id)
             .single()
           if (data) {
@@ -115,10 +113,8 @@ export function IdeaBoard({ initialIdeas }: IdeaBoardProps) {
         { event: 'UPDATE', schema: 'public', table: 'ideas' },
         async (payload) => {
           const { data } = await supabase
-            .from('ideas')
-            .select(
-              'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes.count()'
-            )
+            .from('ideas_with_vote_count')
+            .select('*')
             .eq('id', payload.new.id)
             .single()
           if (data) {
@@ -150,7 +146,7 @@ export function IdeaBoard({ initialIdeas }: IdeaBoardProps) {
               idea.id === payload.new.idea_id
                 ? {
                     ...idea,
-                    votes: [{ count: (idea.votes?.[0]?.count ?? 0) + 1 }],
+                    vote_count: (idea.vote_count ?? 0) + 1,
                   }
                 : idea
             )
@@ -243,7 +239,7 @@ export function IdeaBoard({ initialIdeas }: IdeaBoardProps) {
             category={idea.category?.name ?? null}
             authorEmail={idea.author?.email ?? 'Unbekannt'}
             createdAt={idea.created_at}
-            voteCount={idea.votes?.[0]?.count ?? 0}
+            voteCount={idea.vote_count ?? 0}
           />
         ))}
       </div>

@@ -9,10 +9,8 @@ export default async function Home() {
   const supabase = await createClient()
 
   const { data, error } = await supabase
-    .from('ideas')
-    .select(
-      'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes.count()'
-    )
+    .from('ideas_with_vote_count')
+    .select('*')
     .order('created_at', { ascending: false })
 
   return (
