@@ -46,6 +46,12 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith(route)
   )
 
+  // Never redirect API routes — they handle their own auth and return 401
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api/')
+  if (isApiRoute) {
+    return supabaseResponse
+  }
+
   // Redirect unauthenticated users to login
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
