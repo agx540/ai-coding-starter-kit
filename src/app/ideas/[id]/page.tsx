@@ -68,7 +68,7 @@ export default function IdeaDetailPage() {
     const supabase = createClient()
     supabase
       .from('ideas')
-      .select('*, category:categories(name), author:profiles(email), votes(count)')
+      .select('*, category:categories(name), author:profiles(email), votes.count()')
       .eq('id', ideaId)
       .single()
       .then(({ data, error }) => {

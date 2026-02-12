@@ -11,7 +11,7 @@ export default async function Home() {
   const { data, error } = await supabase
     .from('ideas')
     .select(
-      'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes(count)'
+      'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes.count()'
     )
     .order('created_at', { ascending: false })
 

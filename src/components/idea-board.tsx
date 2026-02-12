@@ -101,7 +101,7 @@ export function IdeaBoard({ initialIdeas }: IdeaBoardProps) {
           const { data } = await supabase
             .from('ideas')
             .select(
-              'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes(count)'
+              'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes.count()'
             )
             .eq('id', payload.new.id)
             .single()
@@ -117,7 +117,7 @@ export function IdeaBoard({ initialIdeas }: IdeaBoardProps) {
           const { data } = await supabase
             .from('ideas')
             .select(
-              'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes(count)'
+              'id, title, description, status, created_at, category:categories(name), author:profiles(email), votes.count()'
             )
             .eq('id', payload.new.id)
             .single()
