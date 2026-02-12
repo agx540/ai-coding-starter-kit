@@ -39,8 +39,10 @@ GRANT EXECUTE ON FUNCTION public.check_email_registered(text) TO service_role;
 --    Original (Migration 002) only returns invitation_id.
 --    Now also SELECTs and returns the email field so the
 --    registration page can prefill it.
+--    DROP first because return type may differ from original.
 -- ============================================
-CREATE OR REPLACE FUNCTION public.validate_invitation_token(p_token TEXT)
+DROP FUNCTION IF EXISTS public.validate_invitation_token(text);
+CREATE FUNCTION public.validate_invitation_token(p_token TEXT)
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER

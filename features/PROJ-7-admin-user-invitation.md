@@ -1,6 +1,10 @@
 # PROJ-7: Admin - User-Einladung per Email
 
-## Status: 🔵 Planned
+## Status: ✅ Deployed (2026-02-12)
+
+**Production URL:** <https://voting-app-kappa-blush.vercel.app>
+**Deployment Commit:** `027e7c0` (PROJ-7 migration fix)
+**Migration:** `010_proj7_add_email_and_check_registered.sql` deployed to Supabase
 
 ## Abhängigkeiten
 - Benötigt: PROJ-1 (User Authentication) - Einladungstoken-Validierung bei Registrierung
@@ -250,21 +254,24 @@ Für Email-Versand: Supabase Edge Function mit eingebauter Resend-Integration.
 
 ## Security-Analyse
 
-### SEC-1: Fehlende DB-Migration für `email`-Spalte
-- **Severity:** Critical
+### ~~SEC-1: Fehlende DB-Migration für `email`-Spalte~~ **GEFIXT**
+
+- **Severity:** ~~Critical~~ → Resolved
 - **Details:** Die `invitations` Tabelle (Migration 001) hat KEINE `email`-Spalte. Der PROJ-7 Code referenziert `email` beim INSERT und SELECT, aber es gibt keine Migration, die diese Spalte hinzufügt. Das gesamte Feature wird zur Laufzeit fehlschlagen, wenn die Spalte nicht manuell angelegt wurde.
 - **Betroffene Dateien:** `src/app/api/invitations/route.ts` (Zeilen 36, 114), `src/app/api/invitations/[id]/route.ts` (Zeilen 38, 66)
-- **Priority:** Critical (Feature-Blocker)
+- **Fix:** Migration 010 deployed (2026-02-12): `ALTER TABLE invitations ADD COLUMN IF NOT EXISTS email TEXT;`
 
-### SEC-2: Fehlende DB-Funktion `check_email_registered`
-- **Severity:** Critical
+### ~~SEC-2: Fehlende DB-Funktion `check_email_registered`~~ **GEFIXT**
+
+- **Severity:** ~~Critical~~ → Resolved
 - **Details:** `POST /api/invitations` ruft `admin.rpc('check_email_registered', ...)` auf (Zeile 83), aber diese Funktion existiert in keiner Migration. Der RPC-Call wird fehlschlagen.
-- **Priority:** Critical (Feature-Blocker)
+- **Fix:** Migration 010 deployed (2026-02-12): `CREATE FUNCTION check_email_registered(p_email TEXT) RETURNS BOOLEAN`
 
-### SEC-3: `validate_invitation_token` gibt kein Email zurück
-- **Severity:** High
+### ~~SEC-3: `validate_invitation_token` gibt kein Email zurück~~ **GEFIXT**
+
+- **Severity:** ~~High~~ → Resolved
 - **Details:** Die DB-Funktion (Migration 002) returned `invitation_id` aber kein `email`. Der `/api/register/validate-token` Endpunkt erwartet `validation.email`, bekommt aber `undefined`. Resultat: Email wird nie vorausgefüllt.
-- **Priority:** High (AC-5 funktioniert nicht)
+- **Fix:** Migration 010 deployed (2026-02-12): `DROP + CREATE FUNCTION validate_invitation_token` mit `email` im Return-JSON
 
 ### SEC-4: Resend-Operation nicht atomar
 - **Severity:** Medium
@@ -288,23 +295,15 @@ Für Email-Versand: Supabase Edge Function mit eingebauter Resend-Integration.
 
 ## Bugs Found
 
-### BUG-1: Fehlende DB-Migration für `email`-Spalte in `invitations`
-- **Severity:** Critical
-- **Steps to Reproduce:**
-  1. Deploye mit vorhandenen Migrationen (001-009)
-  2. Öffne /admin/invitations als Admin
-  3. Gib eine Email ein und klicke "Einladung senden"
-  4. Expected: Einladung wird erstellt
-  5. Actual: 500er Error – Spalte `email` existiert nicht
-- **Fix:** Migration 010 erstellen: `ALTER TABLE invitations ADD COLUMN email TEXT;`
+### ~~BUG-1: Fehlende DB-Migration für `email`-Spalte in `invitations`~~ **GEFIXT**
 
-### BUG-2: Fehlende DB-Funktion `check_email_registered`
-- **Severity:** Critical
-- **Steps to Reproduce:**
-  1. POST /api/invitations mit `{ "email": "test@example.com" }`
-  2. Expected: Prüfung ob Email bereits registriert
-  3. Actual: RPC-Call schlägt fehl → unbehandelte Error-Response
-- **Fix:** Migration mit Funktion erstellen: `CREATE FUNCTION check_email_registered(p_email TEXT) RETURNS BOOLEAN`
+- **Severity:** ~~Critical~~ → Resolved
+- **Fix:** Migration `010_proj7_add_email_and_check_registered.sql` deployed (2026-02-12)
+
+### ~~BUG-2: Fehlende DB-Funktion `check_email_registered`~~ **GEFIXT**
+
+- **Severity:** ~~Critical~~ → Resolved
+- **Fix:** Migration `010_proj7_add_email_and_check_registered.sql` deployed (2026-02-12)
 
 ### BUG-3: Email-Versand nicht implementiert
 - **Severity:** High
@@ -315,13 +314,10 @@ Für Email-Versand: Supabase Edge Function mit eingebauter Resend-Integration.
 - **Fix:** Supabase Edge Function oder Email-Service integrieren
 - **Workaround:** "Link kopieren" Button existiert für manuelles Teilen
 
-### BUG-4: Token-Validierung gibt Email nicht zurück
-- **Severity:** High
-- **Steps to Reproduce:**
-  1. Öffne `/register?token=VALID_TOKEN`
-  2. Expected: Email-Feld ist vorausgefüllt und gesperrt
-  3. Actual: Email-Feld bleibt leer (bearbeitbar)
-- **Fix:** `validate_invitation_token` Funktion erweitern: Email-Spalte im SELECT hinzufügen und im Return-JSON mitgeben
+### ~~BUG-4: Token-Validierung gibt Email nicht zurück~~ **GEFIXT**
+
+- **Severity:** ~~High~~ → Resolved
+- **Fix:** Migration `010_proj7_add_email_and_check_registered.sql` deployed (2026-02-12) — `validate_invitation_token` gibt jetzt `email` im Return-JSON zurück
 
 ### BUG-5: Resend-Operation nicht atomar (Datenverlust-Risiko)
 - **Severity:** Medium
@@ -343,18 +339,18 @@ Für Email-Versand: Supabase Edge Function mit eingebauter Resend-Integration.
 ## Summary
 
 - ✅ 6 Acceptance Criteria grundsätzlich implementiert (UI, Logik, Token-Handling)
-- ❌ 5 Bugs gefunden (2 Critical, 2 High, 1 Medium)
-- ⚠️ 3 Acceptance Criteria NICHT erfüllt (AC-3: Email-Versand, AC-5: Email-Vorausfüllung, AC-9: Registrierte-Email-Check)
-- ⚠️ Feature ist **NICHT production-ready** (Critical Bugs: fehlende DB-Migrationen)
+- ~~❌ 5 Bugs gefunden (2 Critical, 2 High, 1 Medium)~~ → 3 Critical/High Bugs gefixt (BUG-1, BUG-2, BUG-4)
+- ✅ AC-5 (Email-Vorausfüllung) und AC-9 (Registrierte-Email-Check) jetzt funktionsfähig
+- ⚠️ AC-3 (Email-Versand) weiterhin offen — Workaround "Link kopieren" existiert
+- ⚠️ BUG-3 (Email-Versand) und BUG-5 (Resend atomar) offen — Low/Medium Priority
 
-## Recommendation
+## Deployment
 
-**NICHT deployen.** Vor Deployment müssen folgende Bugs gefixt werden:
+**Deployed:** 2026-02-12
+**Production URL:** <https://voting-app-kappa-blush.vercel.app>
+**Migration:** `010_proj7_add_email_and_check_registered.sql` — fixes BUG-1, BUG-2, BUG-4
 
-1. **BUG-1 (Critical):** Migration für `email`-Spalte erstellen
-2. **BUG-2 (Critical):** `check_email_registered` DB-Funktion erstellen
-3. **BUG-4 (High):** `validate_invitation_token` um Email-Return erweitern
-4. **BUG-3 (High):** Email-Versand implementieren (oder als separates PROJ behandeln)
-5. **BUG-5 (Medium):** Resend atomar machen
+## Remaining Issues
 
-Empfehlung: BUG-1, BUG-2, BUG-4 zuerst fixen (ohne diese funktioniert das Feature gar nicht). BUG-3 (Email-Versand) kann als Phase 2 behandelt werden, da der "Link kopieren" Workaround existiert.
+1. **BUG-3 (High):** Email-Versand nicht implementiert — Workaround "Link kopieren" reicht für MVP
+2. **BUG-5 (Medium):** Resend-Operation nicht atomar — Datenverlust-Risiko bei fehlgeschlagenem Insert

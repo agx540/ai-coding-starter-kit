@@ -8,7 +8,7 @@ Build web applications faster with AI agents handling Requirements, Architecture
 ---
 
 ## Aktueller Status
-Voting Board MVP — 4 von 7 Features deployed.
+Voting Board MVP — 5 von 7 Features deployed.
 
 **Production URL:** <https://voting-app-kappa-blush.vercel.app>
 
@@ -40,7 +40,7 @@ Voting Board MVP — 4 von 7 Features deployed.
 - [PROJ-4] Idea Board → ✅ Done → [Spec](/features/PROJ-4-idea-board.md)
 - [PROJ-5] Admin Category Management → 🔵 Planned → [Spec](/features/PROJ-5-admin-category-management.md)
 - [PROJ-6] Admin Idea Moderation → 🔵 Planned → [Spec](/features/PROJ-6-admin-idea-moderation.md)
-- [PROJ-7] Admin User Invitation → 🔵 Planned → [Spec](/features/PROJ-7-admin-user-invitation.md)
+- [PROJ-7] Admin User Invitation → ✅ Done → [Spec](/features/PROJ-7-admin-user-invitation.md)
 
 ---
 
