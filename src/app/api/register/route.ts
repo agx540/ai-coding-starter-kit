@@ -1,4 +1,3 @@
-import { createClient } from '@/lib/supabase-server'
 import { createAdminClient } from '@/lib/supabase-admin'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -11,7 +10,6 @@ const RegisterSchema = z.object({
 
 // POST /api/register - Atomic registration with invitation token
 export async function POST(request: Request) {
-  const supabase = await createClient()
   const admin = createAdminClient()
 
   // 1. Validate input
@@ -26,7 +24,7 @@ export async function POST(request: Request) {
 
   const { token, email, password } = parsed.data
 
-  // 2. Validate token FIRST (before creating user) — admin client (anon cannot call this)
+  // 2. Validate token FIRST (before creating user)
   const { data: validation, error: tokenError } = await admin
     .rpc('validate_invitation_token', { p_token: token.trim() })
 
@@ -42,43 +40,42 @@ export async function POST(request: Request) {
     )
   }
 
-  // 3. Create user via Supabase Auth
-  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+  // 3. Create user via Admin API (bypasses email rate limits + skips confirmation email)
+  //    This is appropriate for invitation-based registration — the user was already invited.
+  const { data: createData, error: createError } = await admin.auth.admin.createUser({
     email,
     password,
+    email_confirm: true,
   })
 
-  if (signUpError) {
-    if (signUpError.message.includes('already registered')) {
+  if (createError) {
+    if (createError.message.includes('already been registered') || createError.message.includes('already exists')) {
       return NextResponse.json(
         { error: 'Diese Email-Adresse ist bereits registriert.' },
         { status: 409 }
       )
     }
     return NextResponse.json(
-      { error: 'Registrierung fehlgeschlagen. Bitte versuche es erneut.' },
+      { error: 'Registrierung fehlgeschlagen. Bitte versuche es erneut.', detail: createError.message },
       { status: 500 }
     )
   }
 
-  if (!signUpData.user) {
+  if (!createData.user) {
     return NextResponse.json(
       { error: 'Registrierung fehlgeschlagen. Bitte versuche es erneut.' },
       { status: 500 }
     )
   }
 
-  // 4. Atomically redeem invitation (admin client — with row lock to prevent race condition)
+  // 4. Atomically redeem invitation
   const { data: redemption, error: redeemError } = await admin
     .rpc('redeem_invitation', {
       p_token: token.trim(),
-      p_user_id: signUpData.user.id,
+      p_user_id: createData.user.id,
     })
 
   if (redeemError || !redemption?.success) {
-    // Token was redeemed between validation and now (race condition caught!)
-    // The user account was already created - but that's acceptable.
-    // The user can still log in, they just didn't "use" a token slot.
     const errorKey = redemption?.error as string | undefined
     if (errorKey === 'already_redeemed') {
       return NextResponse.json(
@@ -92,9 +89,9 @@ export async function POST(request: Request) {
     )
   }
 
-  // 5. Return session if available
+  // 5. Return user (client will need to sign in separately)
   return NextResponse.json({
-    user: signUpData.user,
-    session: signUpData.session,
+    user: createData.user,
+    session: null,
   }, { status: 201 })
 }

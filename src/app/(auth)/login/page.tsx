@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +15,10 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 
-export default function LoginPage() {
+function LoginForm() {
+  const searchParams = useSearchParams()
+  const justRegistered = searchParams.get('registered') === 'true'
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -61,6 +65,11 @@ export default function LoginPage() {
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
+          {justRegistered && !error && (
+            <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
+              Registrierung erfolgreich! Melde dich jetzt an.
+            </div>
+          )}
           {error && (
             <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
               <p>{error}</p>
@@ -116,5 +125,20 @@ export default function LoginPage() {
         </CardFooter>
       </form>
     </Card>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Voting Board</CardTitle>
+          <CardDescription>Melde dich mit deinem Konto an</CardDescription>
+        </CardHeader>
+      </Card>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

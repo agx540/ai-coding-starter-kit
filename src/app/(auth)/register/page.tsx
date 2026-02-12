@@ -93,12 +93,8 @@ function RegisterForm() {
         return
       }
 
-      if (data.session) {
-        window.location.href = '/'
-      } else {
-        setError('Registrierung fehlgeschlagen. Bitte versuche es erneut.')
-        setIsLoading(false)
-      }
+      // Registration successful — redirect to login
+      window.location.href = '/login?registered=true'
     } catch {
       setError('Registrierung fehlgeschlagen. Bitte versuche es erneut.')
       setIsLoading(false)
